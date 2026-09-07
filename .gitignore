@@ -1,0 +1,40 @@
+# JavaScript dependencies and build output
+**/node_modules/
+**/dist/
+**/.vite/
+**/coverage/
+
+# Rust / Tauri build output
+**/target/
+
+# Local databases, backups, and user data
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.backup
+*.bak
+**/backups/
+**/attachments/
+
+# Secrets and signing material
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+
+
+# Local agent session artifacts
+.agents/
+**/.agents/
