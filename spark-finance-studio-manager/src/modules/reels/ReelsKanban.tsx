@@ -30,12 +30,14 @@ export interface ReelsKanbanProps {
   onRequestNewReel?: boolean;
   onResetNewReelRequest?: () => void;
   preselectedClientId?: string | null;
+  onOpenHeaderForm?: (mode: "form-reel") => void;
 }
 
 export const ReelsKanban: React.FC<ReelsKanbanProps> = ({
   onRequestNewReel,
   onResetNewReelRequest,
   preselectedClientId,
+  onOpenHeaderForm,
 }) => {
   const [reels, setReels] = useState<ReelItemWithDetails[]>([]);
   const [clients, setClients] = useState<ClientRecord[]>([]);
@@ -180,8 +182,12 @@ export const ReelsKanban: React.FC<ReelsKanbanProps> = ({
           <button
             type="button"
             onClick={() => {
-              setReelToEdit(null);
-              setIsFormModalOpen(true);
+              if (onOpenHeaderForm) {
+                onOpenHeaderForm("form-reel");
+              } else {
+                setReelToEdit(null);
+                setIsFormModalOpen(true);
+              }
             }}
             className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#004AC6] hover:bg-[#003bb0] active:scale-95 text-white text-xs font-bold transition-all shadow-sm"
           >

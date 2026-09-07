@@ -13,12 +13,14 @@ export interface PackageTemplatesListProps {
   onSellTemplate?: (template: PackageTemplateWithItems) => void;
   onRequestNewTemplate?: boolean;
   onResetNewTemplateRequest?: () => void;
+  onOpenHeaderForm?: () => void;
 }
 
 export const PackageTemplatesList: React.FC<PackageTemplatesListProps> = ({
   onSellTemplate,
   onRequestNewTemplate,
   onResetNewTemplateRequest,
+  onOpenHeaderForm,
 }) => {
   const [templates, setTemplates] = useState<PackageTemplateWithItems[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -80,8 +82,12 @@ export const PackageTemplatesList: React.FC<PackageTemplatesListProps> = ({
           <button
             type="button"
             onClick={() => {
-              setTemplateToEdit(null);
-              setIsModalOpen(true);
+              if (onOpenHeaderForm) {
+                onOpenHeaderForm();
+              } else {
+                setTemplateToEdit(null);
+                setIsModalOpen(true);
+              }
             }}
             className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#004AC6] hover:bg-[#003bb0] active:scale-95 text-white text-xs font-bold transition-all shadow-sm"
           >
