@@ -18,6 +18,7 @@ import {
   assertNonEmptyString,
   DomainInvariantError,
 } from '../../domain/rules/invariants';
+import { PackageUnit } from '../../domain/models/package';
 
 export interface PackageTemplateWithItems {
   id: string;
@@ -322,7 +323,7 @@ export async function fetchClientPackages(
   const paidMap = new Map<string, number>();
   allocRows.forEach((a) => paidMap.set(a.target_id, a.total));
 
-  return packages.map((pkg) => {
+  const unifiedPackages = packages.map((pkg) => {
     const client = clientMap.get(pkg.client_id);
     const pkgItems = allItems.filter((i) => i.client_package_id === pkg.id);
 
@@ -367,4 +368,107 @@ export async function fetchClientPackages(
       paidAmountPiasters: paidAmount,
     };
   });
+
+  // Query universal sold_plans
+  try {
+    const soldPlans = await driver.query<{
+      id: string;
+      client_id: string;
+      plan_template_id: string | null;
+      name_snapshot: string;
+      price_snapshot: number;
+      total_snapshot: number;
+      start_date: string;
+      service_status: string;
+      notes: string | null;
+      created_at: string;
+      updated_at: string;
+    }>(
+      `SELECT sp.id, sp.client_id, sp.plan_template_id, sp.name_snapshot, sp.price_snapshot,
+              sp.total_snapshot, sp.start_date, sp.service_status, sp.notes, sp.created_at, sp.updated_at
+       FROM sold_plans sp
+       ${whereClause}
+       ORDER BY sp.start_date DESC, sp.created_at DESC;`,
+      params
+    );
+
+    const soldEntitlements = await driver.query<{
+      id: string;
+      sold_plan_id: string;
+      entitlement_name: string;
+      entitlement_key: string;
+      purchased_quantity: number;
+      consumed_quantity: number;
+      remaining_quantity: number;
+      unit: string;
+    }>(
+      `SELECT id, sold_plan_id, entitlement_name, entitlement_key, purchased_quantity, consumed_quantity, remaining_quantity, unit
+       FROM sold_plan_entitlements;`
+    );
+
+    const unifiedSoldPlans: ClientPackageDetails[] = soldPlans.map((sp) => {
+      const client = clientMap.get(sp.client_id);
+      const planEnts = soldEntitlements.filter((e) => e.sold_plan_id === sp.id);
+
+      const hrsEnt = planEnts.find((e) => e.entitlement_key === 'hours');
+      const reelsEnt = planEnts.find((e) => e.entitlement_key === 'reels');
+
+      const hoursPurchased = hrsEnt ? Math.round(hrsEnt.purchased_quantity * 60) : 0;
+      const hoursUsed = hrsEnt ? Math.round(hrsEnt.consumed_quantity * 60) : 0;
+      const hoursRemaining = hrsEnt ? Math.round(hrsEnt.remaining_quantity * 60) : 0;
+
+      const reelsPurchased = reelsEnt ? reelsEnt.purchased_quantity : 0;
+      const reelsUsed = reelsEnt ? reelsEnt.consumed_quantity : 0;
+      const reelsRemaining = reelsEnt ? reelsEnt.remaining_quantity : 0;
+
+      const isLowBalance =
+        (hoursPurchased > 0 && hoursRemaining <= 60 && hoursRemaining > 0) ||
+        (reelsPurchased > 0 && reelsRemaining <= 1 && reelsRemaining > 0);
+
+      const isFullyConsumed =
+        (hoursPurchased === 0 || hoursRemaining === 0) &&
+        (reelsPurchased === 0 || reelsRemaining === 0);
+
+      const mappedItems: ClientPackageItemRecord[] = planEnts.map((e) => ({
+        id: e.id,
+        client_package_id: sp.id,
+        unit: (e.entitlement_key === 'hours' ? 'hours' : 'reels') as PackageUnit,
+        purchased_quantity: e.entitlement_key === 'hours' ? Math.round(e.purchased_quantity * 60) : e.purchased_quantity,
+        used_quantity: e.entitlement_key === 'hours' ? Math.round(e.consumed_quantity * 60) : e.consumed_quantity,
+        reserved_quantity: 0,
+        created_at: sp.created_at,
+      }));
+
+      return {
+        id: sp.id,
+        client_id: sp.client_id,
+        package_template_id: sp.plan_template_id,
+        name_snapshot: sp.name_snapshot,
+        sold_price: sp.total_snapshot || sp.price_snapshot,
+        purchased_at: sp.start_date,
+        status: (sp.service_status === 'active' ? 'active' : sp.service_status === 'completed' ? 'depleted' : 'cancelled') as any,
+        notes: sp.notes,
+        created_at: sp.created_at,
+        updated_at: sp.updated_at,
+        clientName: client?.name ?? 'عميل غير معروف',
+        clientCompany: client?.company_name ?? null,
+        items: mappedItems,
+        hoursPurchasedMinutes: hoursPurchased,
+        hoursUsedMinutes: hoursUsed,
+        hoursReservedMinutes: 0,
+        hoursRemainingMinutes: hoursRemaining,
+        reelsPurchased,
+        reelsUsed,
+        reelsReserved: 0,
+        reelsRemaining,
+        isLowBalance,
+        isFullyConsumed,
+        paidAmountPiasters: 0,
+      };
+    });
+
+    return [...unifiedPackages, ...unifiedSoldPlans];
+  } catch {
+    return unifiedPackages;
+  }
 }

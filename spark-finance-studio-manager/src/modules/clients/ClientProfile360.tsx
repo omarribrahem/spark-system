@@ -15,10 +15,15 @@ import {
   Edit,
   Archive,
   ShieldCheck,
+  Mail,
+  MapPin,
+  MessageCircle,
+  ExternalLink,
 } from 'lucide-react';
 import {
   ClientRecord,
   ClientRepository,
+  ClientCustomFieldRepository,
   PaymentRepository,
   PackageRepository,
   BookingRepository,
@@ -29,6 +34,12 @@ import {
   MarketingContractRecord,
   MarketingMonthlyDueRecord,
 } from '../../database/repositories';
+import {
+  CustomFieldDefinition,
+  CustomFieldValue,
+  CLIENT_TYPES,
+  PREFERRED_CONTACTS,
+} from '../../domain/models/client-custom-fields';
 import { getDatabaseDriver } from '../../database/driver';
 import { BdiCurrency, BdiDate, BdiText } from '../../ui/bdi';
 import { LoadingSpinner, EmptyState, ActionableError } from '../../ui/feedback';
@@ -69,6 +80,8 @@ export const ClientProfile360: React.FC<ClientProfile360Props> = ({
   const [bookings, setBookings] = useState<StudioBookingRecord[]>([]);
   const [payments, setPayments] = useState<Array<PaymentRecord & { allocations: PaymentAllocationRecord[] }>>([]);
   const [creditPiasters, setCreditPiasters] = useState(0);
+  const [customDefinitions, setCustomDefinitions] = useState<CustomFieldDefinition[]>([]);
+  const [customValues, setCustomValues] = useState<Record<string, CustomFieldValue>>({});
 
   // Action states
   const [isArchiving, setIsArchiving] = useState(false);
@@ -84,13 +97,21 @@ export const ClientProfile360: React.FC<ClientProfile360Props> = ({
       const paymentRepo = new PaymentRepository(driver);
       const packageRepo = new PackageRepository(driver);
       const bookingRepo = new BookingRepository(driver);
+      const customRepo = new ClientCustomFieldRepository(driver);
 
-      // 1. Fetch Client
-      const c = await clientRepo.getById(clientId);
+      // 1. Fetch Client & Custom Fields
+      const [c, defs, vals] = await Promise.all([
+        clientRepo.getById(clientId),
+        customRepo.listDefinitions(),
+        customRepo.getValuesForClient(clientId),
+      ]);
+
       if (!c) {
         throw new Error(`تعذر العثور على العميل بالمعرف: ${clientId}`);
       }
       setClient(c);
+      setCustomDefinitions(defs);
+      setCustomValues(vals);
 
       // 2. Fetch Client Credit
       const credit = await paymentRepo.getClientCreditPiasters(clientId);
@@ -326,22 +347,65 @@ export const ClientProfile360: React.FC<ClientProfile360Props> = ({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-[#707070]">
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-[#004AC6] font-semibold">
+                    {CLIENT_TYPES.find((t) => t.value === client?.client_type)?.label || 'فرد'}
+                  </span>
+
                   {client?.company_name && (
                     <span className="flex items-center gap-1">
                       <Building2 className="w-3.5 h-3.5 text-neutral-400" />
                       <span>{client.company_name}</span>
                     </span>
                   )}
+
+                  {client?.contact_name && (
+                    <span className="flex items-center gap-1 text-neutral-600 font-medium">
+                      <span>مسؤول التواصل: {client.contact_name}</span>
+                      {client.contact_role && (
+                        <span className="text-neutral-400 text-[11px]">({client.contact_role})</span>
+                      )}
+                    </span>
+                  )}
+
+                  {client?.city && (
+                    <span className="flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-neutral-400" />
+                      <span>{client.city}</span>
+                    </span>
+                  )}
+
                   {client?.phone && (
                     <span className="flex items-center gap-1">
                       <Phone className="w-3.5 h-3.5 text-neutral-400" />
                       <BdiText isPhone>{client.phone}</BdiText>
                     </span>
                   )}
-                  {client?.secondary_phone && (
-                    <span className="flex items-center gap-1 text-neutral-400">
-                      <span>إضافي:</span>
-                      <BdiText isPhone>{client.secondary_phone}</BdiText>
+
+                  {client?.whatsapp && (
+                    <a
+                      href={`https://wa.me/${client.whatsapp.replace(/[^0-9]/g, '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-emerald-700 hover:text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full"
+                    >
+                      <MessageCircle className="w-3 h-3 text-emerald-600" />
+                      <BdiText isPhone>{client.whatsapp}</BdiText>
+                    </a>
+                  )}
+
+                  {client?.email && (
+                    <a
+                      href={`mailto:${client.email}`}
+                      className="flex items-center gap-1 text-blue-600 hover:underline"
+                    >
+                      <Mail className="w-3.5 h-3.5 text-blue-400" />
+                      <span dir="ltr">{client.email}</span>
+                    </a>
+                  )}
+
+                  {client?.preferred_contact && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600">
+                      يفضل: {PREFERRED_CONTACTS.find((p) => p.value === client.preferred_contact)?.label || client.preferred_contact}
                     </span>
                   )}
                 </div>
@@ -538,6 +602,111 @@ export const ClientProfile360: React.FC<ClientProfile360Props> = ({
                     <div className="p-4 rounded-2xl bg-white border border-slate-200">
                       <h4 className="text-xs font-bold text-slate-700 mb-1">ملاحظات العميل التشغيلية</h4>
                       <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap">{client.notes}</p>
+                    </div>
+                  )}
+
+                  {/* Custom Fields Card */}
+                  {customDefinitions.length > 0 && (
+                    <div className="p-5 rounded-2xl bg-white border border-slate-200 space-y-4">
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                        <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                          <Layers className="w-4 h-4 text-[#004AC6]" />
+                          <span>البيانات والحقول المخصصة</span>
+                        </h4>
+                        {client && onEditClient && (
+                          <button
+                            type="button"
+                            onClick={() => onEditClient(client)}
+                            className="text-xs text-[#004AC6] hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <Edit className="w-3 h-3" />
+                            <span>تعديل القيم</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
+                        {customDefinitions.map((def) => {
+                          const val = customValues[def.id];
+                          let displayContent: React.ReactNode = (
+                            <span className="text-xs text-neutral-400">غير محدد</span>
+                          );
+
+                          if (val) {
+                            if (def.field_type === 'money_piasters' && val.number_value !== null) {
+                              displayContent = (
+                                <BdiCurrency piasters={val.number_value} className="text-xs font-bold text-[#1A1A1A]" />
+                              );
+                            } else if (def.field_type === 'date' && val.date_value) {
+                              displayContent = (
+                                <BdiDate value={val.date_value} format="date" className="text-xs font-medium text-[#1A1A1A]" />
+                              );
+                            } else if (def.field_type === 'boolean' && val.boolean_value !== null) {
+                              displayContent = (
+                                <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-semibold ${
+                                  val.boolean_value === 1
+                                    ? 'bg-emerald-50 text-emerald-700'
+                                    : 'bg-neutral-100 text-neutral-500'
+                                }`}>
+                                  {val.boolean_value === 1 ? 'نعم / مفعّل' : 'لا'}
+                                </span>
+                              );
+                            } else if (def.field_type === 'multi_select' && val.multi_select_option_ids && val.multi_select_option_ids.length > 0) {
+                              displayContent = (
+                                <div className="flex flex-wrap gap-1">
+                                  {val.multi_select_option_ids.map((optId) => {
+                                    const opt = def.options?.find((o) => o.id === optId);
+                                    return (
+                                      <span key={optId} className="text-[10px] px-2 py-0.5 rounded-md bg-blue-50 text-[#004AC6] font-medium">
+                                        {opt ? opt.label : optId}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            } else if (def.field_type === 'single_select' && val.text_value) {
+                              const opt = def.options?.find((o) => o.id === val.text_value);
+                              displayContent = (
+                                <span className="text-xs font-medium text-[#1A1A1A]">
+                                  {opt ? opt.label : val.text_value}
+                                </span>
+                              );
+                            } else if (def.field_type === 'url' && val.text_value) {
+                              displayContent = (
+                                <a
+                                  href={val.text_value}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-[#004AC6] hover:underline flex items-center gap-1 truncate"
+                                  dir="ltr"
+                                >
+                                  <ExternalLink className="w-3 h-3 shrink-0" />
+                                  <span className="truncate">{val.text_value}</span>
+                                </a>
+                              );
+                            } else if (val.text_value) {
+                              displayContent = (
+                                <span className="text-xs font-medium text-[#1A1A1A] whitespace-pre-wrap">
+                                  {val.text_value}
+                                </span>
+                              );
+                            } else if (val.number_value !== null && val.number_value !== undefined) {
+                              displayContent = (
+                                <span className="text-xs font-mono text-[#1A1A1A]">
+                                  {val.number_value}
+                                </span>
+                              );
+                            }
+                          }
+
+                          return (
+                            <div key={def.id} className="p-2.5 rounded-xl bg-neutral-50 border border-neutral-100 space-y-1">
+                              <span className="block text-[11px] font-semibold text-neutral-500">{def.label}</span>
+                              <div>{displayContent}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
 

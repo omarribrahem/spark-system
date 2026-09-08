@@ -5,11 +5,10 @@ import {
   fetchWebsiteProjects,
   WebsiteProjectWithDetails,
 } from './contract-service';
-import { WebsiteProjectRecord, ContractRepository } from '../../database/repositories';
+import { ContractRepository } from '../../database/repositories';
 import { WebsiteProjectStatus } from '../../domain/models/contract';
 import { BdiCurrency, BdiDate } from '../../ui/bdi';
 import { SkeletonCard, EmptyState, ActionableError } from '../../ui/feedback';
-import { WebsiteProjectModal } from './WebsiteProjectModal';
 import { Select } from '../../ui/athredu/Select';
 
 export interface WebsiteProjectsListProps {
@@ -31,19 +30,12 @@ export const WebsiteProjectsList: React.FC<WebsiteProjectsListProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  // Modal
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [projectToEdit, setProjectToEdit] = useState<WebsiteProjectRecord | null>(null);
-
   useEffect(() => {
     if (onRequestNewProject) {
-      setProjectToEdit(null);
-      setIsModalOpen(true);
-      if (onResetNewProjectRequest) {
-        onResetNewProjectRequest();
-      }
+      if (onOpenHeaderForm) onOpenHeaderForm();
+      if (onResetNewProjectRequest) onResetNewProjectRequest();
     }
-  }, [onRequestNewProject, onResetNewProjectRequest]);
+  }, [onRequestNewProject, onResetNewProjectRequest, onOpenHeaderForm]);
 
   const loadData = useCallback(async () => {
     try {
@@ -151,15 +143,8 @@ export const WebsiteProjectsList: React.FC<WebsiteProjectsListProps> = ({
 
           <button
             type="button"
-            onClick={() => {
-              if (onOpenHeaderForm) {
-                onOpenHeaderForm();
-              } else {
-                setProjectToEdit(null);
-                setIsModalOpen(true);
-              }
-            }}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#004AC6] hover:bg-[#003bb0] active:scale-95 text-white text-xs font-bold transition-all shadow-sm"
+            onClick={() => onOpenHeaderForm?.()}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#004AC6] hover:bg-[#003bb0] active:scale-[0.98] text-white text-xs font-bold transition-all shadow-sm whitespace-nowrap shrink-0"
           >
             <PlusCircle className="w-4 h-4" />
             <span>مشروع موقع جديد</span>
@@ -189,10 +174,7 @@ export const WebsiteProjectsList: React.FC<WebsiteProjectsListProps> = ({
               : 'سجل مشاريع تصميم وبرمجة المواقع والمتاجر الإلكترونية لمتابعة نسب الإنجاز والدفعات.'
           }
           actionLabel="تسجيل مشروع جديد الآن"
-          onAction={() => {
-            setProjectToEdit(null);
-            setIsModalOpen(true);
-          }}
+          onAction={() => onOpenHeaderForm?.()}
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -281,11 +263,8 @@ export const WebsiteProjectsList: React.FC<WebsiteProjectsListProps> = ({
               <div className="mt-4 pt-3 flex items-center justify-between gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setProjectToEdit(proj);
-                    setIsModalOpen(true);
-                  }}
-                  className="px-3 py-1.5 rounded-full bg-neutral-100 hover:bg-neutral-200 text-[#1A1A1A] text-xs font-medium transition-all"
+                  onClick={() => onOpenHeaderForm?.()}
+                  className="px-3 py-1.5 rounded-full bg-neutral-100 hover:bg-neutral-200 text-[#1A1A1A] text-xs font-medium transition-all whitespace-nowrap shrink-0"
                 >
                   تعديل
                 </button>
@@ -294,7 +273,7 @@ export const WebsiteProjectsList: React.FC<WebsiteProjectsListProps> = ({
                   <button
                     type="button"
                     onClick={() => handleAdvanceMilestone(proj)}
-                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-[#004AC6] hover:bg-[#003bb0] text-white text-xs font-medium transition-all shadow-xs"
+                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-[#004AC6] hover:bg-[#003bb0] text-white text-xs font-medium transition-all shadow-xs whitespace-nowrap shrink-0"
                   >
                     <span>ترقية المرحلة</span>
                     <ArrowRight className="w-3.5 h-3.5" />
@@ -302,7 +281,7 @@ export const WebsiteProjectsList: React.FC<WebsiteProjectsListProps> = ({
                 )}
 
                 {proj.status === 'completed' && (
-                  <span className="flex items-center gap-1 text-emerald-600 text-xs font-semibold">
+                  <span className="flex items-center gap-1 text-emerald-600 text-xs font-semibold whitespace-nowrap shrink-0">
                     <CheckCircle className="w-4 h-4" />
                     <span>مكتمل</span>
                   </span>
@@ -312,14 +291,6 @@ export const WebsiteProjectsList: React.FC<WebsiteProjectsListProps> = ({
           ))}
         </div>
       )}
-
-      {/* Modal */}
-      <WebsiteProjectModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSaved={loadData}
-        projectToEdit={projectToEdit}
-      />
     </div>
   );
 };

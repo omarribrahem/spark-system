@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Search,
   UserPlus,
@@ -7,30 +7,31 @@ import {
   Archive,
   RotateCcw,
   Edit,
-  Wallet,
-  ExternalLink,
+  Settings2,
+  MapPin,
+  MessageCircle,
 } from "lucide-react";
 import {
   ClientRecord,
   ClientRepository,
-  PaymentRepository,
+  ClientWithFinancials,
+  ClientCustomFieldRepository,
+  ClientFilterPresetRepository,
+  ClientFilterPreset,
   PaymentRecord,
 } from "../../database/repositories";
+import { CustomFieldDefinition, CLIENT_TYPES } from "../../domain/models/client-custom-fields";
+import { FilterAST } from "../../domain/models/client-filter-ast";
 import { getDatabaseDriver } from "../../database/driver";
 import { BdiCurrency } from "../../ui/bdi";
 import { SkeletonCard, EmptyState, ActionableError } from "../../ui/feedback";
 import { Button } from "../../ui/athredu/Button";
 import { UserAvatar } from "../../ui/athredu/UserAvatar";
-import { ClientFormModal } from "./ClientFormModal";
 import { ClientProfile360 } from "./ClientProfile360";
+import { ClientFilterBuilder } from "./ClientFilterBuilder";
+import { CustomFieldsSettingsModal } from "./CustomFieldsSettingsModal";
 
 export type ClientFilterTab = "all" | "active" | "archived" | "with_dues";
-
-export interface ClientWithFinancials extends ClientRecord {
-  outstandingDuesPiasters: number;
-  creditPiasters: number;
-  activeContractsCount: number;
-}
 
 export interface ClientListProps {
   onOpenPaymentModal?: (client: ClientRecord) => void;
@@ -54,68 +55,54 @@ export const ClientList: React.FC<ClientListProps> = ({
   const [activeTab, setActiveTab] = useState<ClientFilterTab>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
-  const [isFormModalOpen, setIsFormModalOpen] = useState<boolean>(false);
-  const [clientToEdit, setClientToEdit] = useState<ClientRecord | null>(null);
+  // Custom fields & Filter AST state
+  const [customDefinitions, setCustomDefinitions] = useState<CustomFieldDefinition[]>([]);
+  const [ast, setAst] = useState<FilterAST>({ conjunction: "AND", rules: [] });
+  const [presets, setPresets] = useState<ClientFilterPreset[]>([]);
+  const [activePresetId, setActivePresetId] = useState<string | null>(null);
+
+  // Modals state
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
 
   useEffect(() => {
     if (onRequestNewClient) {
-      setClientToEdit(null);
-      setIsFormModalOpen(true);
+      if (onOpenHeaderForm) onOpenHeaderForm("form-client");
       if (onResetNewClientRequest) onResetNewClientRequest();
     }
-  }, [onRequestNewClient, onResetNewClientRequest]);
+  }, [onRequestNewClient, onResetNewClientRequest, onOpenHeaderForm]);
 
+  // Load clients directly via SQLite repository query layer
   const loadClients = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
       const driver = await getDatabaseDriver();
       const clientRepo = new ClientRepository(driver);
-      const paymentRepo = new PaymentRepository(driver);
+      const customRepo = new ClientCustomFieldRepository(driver);
+      const presetRepo = new ClientFilterPresetRepository(driver);
 
-      const baseClients = await clientRepo.list();
+      const [defs, loadedPresets] = await Promise.all([
+        customRepo.listDefinitions(),
+        presetRepo.list(),
+      ]);
+      setCustomDefinitions(defs);
+      setPresets(loadedPresets);
 
-      const enrichedClients: ClientWithFinancials[] = await Promise.all(
-        baseClients.map(async (c: ClientRecord) => {
-          const creditPiasters = await paymentRepo.getClientCreditPiasters(c.id);
+      // Execute search and filtering in SQLite layer directly (no memory filtering in React)
+      const results = await clientRepo.queryWithFilterAST(ast, defs, {
+        searchQuery,
+        activeTab,
+      });
 
-          const duesRows = await driver.query<{ totalOutstanding: number }>(
-            `SELECT COALESCE(SUM(remaining), 0) AS totalOutstanding FROM (
-               SELECT (d.amount_piasters - COALESCE(SUM(pa.allocated_piasters), 0)) AS remaining
-               FROM marketing_monthly_dues d
-               JOIN marketing_contracts mc ON d.contract_id = mc.id
-               LEFT JOIN payment_allocations pa ON pa.target_id = d.id AND pa.target_type = 'marketing_due'
-               WHERE mc.client_id = ?
-               GROUP BY d.id
-             ) WHERE remaining > 0;`,
-            [c.id]
-          );
-          const outstandingDuesPiasters = duesRows[0]?.totalOutstanding ?? 0;
-
-          const contractsCountRows = await driver.query<{ count: number }>(
-            `SELECT COUNT(*) AS count FROM marketing_contracts WHERE client_id = ? AND status = 'active';`,
-            [c.id]
-          );
-          const activeContractsCount = contractsCountRows[0]?.count ?? 0;
-
-          return {
-            ...c,
-            outstandingDuesPiasters,
-            creditPiasters,
-            activeContractsCount,
-          };
-        })
-      );
-
-      setClients(enrichedClients);
+      setClients(results);
     } catch (err: unknown) {
       console.error("Failed to load clients list:", err);
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [ast, searchQuery, activeTab]);
 
   useEffect(() => {
     loadClients();
@@ -136,257 +123,236 @@ export const ClientList: React.FC<ClientListProps> = ({
     }
   };
 
-  const filteredClients = useMemo(() => {
-    return clients.filter((c) => {
-      if (activeTab === "active" && c.active !== 1) return false;
-      if (activeTab === "archived" && c.active !== 0) return false;
-      if (activeTab === "with_dues" && c.outstandingDuesPiasters <= 0) return false;
-
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const matchName = c.name.toLowerCase().includes(q);
-        const matchCompany = c.company_name?.toLowerCase().includes(q) ?? false;
-        const matchPhone = c.phone?.includes(q) ?? false;
-        if (!matchName && !matchCompany && !matchPhone) return false;
-      }
-
-      return true;
-    });
-  }, [clients, activeTab, searchQuery]);
+  const handleSelectPreset = (preset: ClientFilterPreset | null) => {
+    if (preset) {
+      setActivePresetId(preset.id);
+      setAst({
+        conjunction: "AND",
+        rules: preset.rules || [],
+      });
+    } else {
+      setActivePresetId(null);
+      setAst({
+        conjunction: "AND",
+        rules: [],
+      });
+    }
+  };
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Top Header & Search Bar (ATHREDU Style) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="بحث بالاسم، الشركة، أو رقم الهاتف..."
-            className="w-full h-11 pr-11 pl-10 rounded-full bg-white border border-[#E5E5E5] text-sm text-[#1A1A1A] placeholder-neutral-400 focus:outline-none focus:border-[#004AC6] shadow-sm transition-all"
-          />
-          {searchQuery && (
+      {/* Top Header Card */}
+      <div className="rounded-[2rem] border border-[#E5E5E5] bg-white p-6 md:p-8 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-[#1A1A1A]">
+              سجل العملاء
+            </h1>
+            <p className="mt-1 text-xs text-[#707070]">
+              إدارة ملفات العملاء 360°، الحقول المخصصة، الفلاتر الذكية والأرصدة المالية.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setSearchQuery("")}
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-medium text-neutral-400 hover:text-neutral-700"
+              onClick={() => setIsSettingsModalOpen(true)}
+              className="h-11 px-4 rounded-full border border-[#E5E5E5] bg-white hover:bg-neutral-50 text-xs font-semibold text-neutral-700 flex items-center gap-1.5 transition-all cursor-pointer"
             >
-              مسح
+              <Settings2 className="w-4 h-4 text-neutral-500" />
+              <span>إعدادات الحقول</span>
             </button>
-          )}
+
+            <Button
+              variant="brand"
+              onClick={() => onOpenHeaderForm?.("form-client")}
+              className="rounded-full h-11 px-5 text-xs font-bold whitespace-nowrap shrink-0"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>عميل جديد</span>
+            </Button>
+          </div>
         </div>
 
-        <Button
-          onClick={() => {
-            if (onOpenHeaderForm) {
-              onOpenHeaderForm("form-client");
-            } else {
-              setClientToEdit(null);
-              setIsFormModalOpen(true);
-            }
-          }}
-          variant="brand"
-          size="sm"
-          className="gap-2 shrink-0 self-start sm:self-auto"
-        >
-          <UserPlus className="w-4 h-4" />
-          <span>إضافة عميل جديد</span>
-        </Button>
+        {/* Search, Tabs & Filter Builder */}
+        <div className="mt-6 space-y-4">
+          {/* Quick Filter Tabs & Search Bar */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            {/* Filter Tabs */}
+            <div className="flex flex-wrap items-center gap-1.5 bg-[#F9FAFB] p-1.5 rounded-full border border-[#E5E5E5] self-start">
+              {[
+                { id: "all", label: "الكل" },
+                { id: "active", label: "النشطون" },
+                { id: "archived", label: "المؤرشفون" },
+                { id: "with_dues", label: "عليهم مستحقات" },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as ClientFilterTab)}
+                  className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                    activeTab === tab.id
+                      ? "bg-white text-[#004AC6] shadow-xs border border-[#E5E5E5]"
+                      : "text-[#707070] hover:text-[#1A1A1A]"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Quick Search Bar */}
+            <div className="relative w-full md:w-80">
+              <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#A0A0A0]" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="بحث بالاسم، الهاتف، المدينة، أو الحقول المخصصة..."
+                className="w-full h-11 pr-10 pl-4 rounded-full border border-[#E5E5E5] bg-white text-xs font-semibold text-[#1A1A1A] placeholder:text-[#A0A0A0] focus:outline-none focus:border-[#004AC6] transition-all"
+              />
+            </div>
+          </div>
+
+          {/* Client Filter Builder (Rule Engine, Chips & Presets) */}
+          <div className="pt-2 border-t border-neutral-100">
+            <ClientFilterBuilder
+              ast={ast}
+              customDefinitions={customDefinitions}
+              presets={presets}
+              activePresetId={activePresetId}
+              onAstChange={(newAst) => {
+                setAst(newAst);
+                setActivePresetId(null);
+              }}
+              onPresetsChange={loadClients}
+              onSelectPreset={handleSelectPreset}
+            />
+          </div>
+        </div>
       </div>
 
-      {/* Filter Tabs (ATHREDU Capsule Filter Pills) */}
-      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
-        {[
-          { id: "all", label: "الكل", count: clients.length },
-          { id: "active", label: "النشطون", count: clients.filter((c) => c.active === 1).length },
-          { id: "archived", label: "المؤرشفون", count: clients.filter((c) => c.active === 0).length },
-          {
-            id: "with_dues",
-            label: "عليهم مستحقات",
-            count: clients.filter((c) => c.outstandingDuesPiasters > 0).length,
-          },
-        ].map((tab) => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id as ClientFilterTab)}
-              className={`inline-flex items-center gap-2 h-9 px-4 rounded-full text-xs font-semibold transition-all shrink-0 select-none ${
-                isActive
-                  ? "bg-[#004AC6] text-white shadow-sm"
-                  : "bg-white border border-[#E5E5E5] text-[#4A4A4A] hover:bg-neutral-50 hover:text-[#1A1A1A]"
-              }`}
-            >
-              <span>{tab.label}</span>
-              <span
-                className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-                  isActive ? "bg-white/20 text-white" : "bg-neutral-100 text-neutral-500"
-                }`}
-              >
-                {tab.count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Content Area */}
+      {/* Clients List / Cards Grid */}
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <SkeletonCard rows={3} hasHeader hasBadge />
-          <SkeletonCard rows={3} hasHeader hasBadge />
-          <SkeletonCard rows={3} hasHeader hasBadge />
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
         </div>
       ) : error ? (
         <ActionableError
-          title="تعذر تحميل سجل العملاء"
-          message={error.message}
+          message="حدث خطأ أثناء تحميل سجل العملاء"
           onRetry={loadClients}
         />
-      ) : filteredClients.length === 0 ? (
+      ) : clients.length === 0 ? (
         <EmptyState
-          title={
-            searchQuery
-              ? "لا توجد نتائج مطابقة لبحثك"
-              : activeTab === "archived"
-              ? "لا يوجد عملاء مؤرشفون"
-              : activeTab === "with_dues"
-              ? "رائع! لا توجد مستحقات متأخرة على أي عميل"
-              : "لا يوجد عملاء مسجلين حالياً"
-          }
-          description={
-            searchQuery
-              ? `لم يتم العثور على أي عميل يحتوي على: "${searchQuery}"`
-              : "ابدأ بتسجيل أول عميل لإضافة عقود التسويق، باقات الاستوديو، والمعاملات المالية."
-          }
-          actionLabel={activeTab !== "archived" && !searchQuery ? "+ إضافة أول عميل" : undefined}
-          onAction={
-            activeTab !== "archived" && !searchQuery
-              ? () => {
-                  setClientToEdit(null);
-                  setIsFormModalOpen(true);
-                }
-              : undefined
-          }
+          title="لا يوجد عملاء يطابقون شروط البحث"
+          description="جرّب تعديل معايير الفلترة أو مسح الشروط للوصول للنتائج."
+          actionLabel="تسجيل عميل جديد"
+          onAction={() => onOpenHeaderForm?.('form-client')}
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredClients.map((client) => {
+          {clients.map((client) => {
             const hasDues = client.outstandingDuesPiasters > 0;
             const hasCredit = client.creditPiasters > 0;
+            const clientTypeLabel =
+              CLIENT_TYPES.find((t) => t.value === client.client_type)?.label ||
+              client.client_type ||
+              "فرد";
 
             return (
               <div
                 key={client.id}
-                className="bg-white rounded-[2rem] border border-[#E5E5E5] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.06)] hover:border-gray-300 transition-all duration-200 flex flex-col justify-between group"
+                onClick={() => setSelectedClientId(client.id)}
+                className={`rounded-[2rem] border bg-white p-5 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:border-gray-300 transition-all duration-200 cursor-pointer flex flex-col justify-between ${
+                  client.active === 0
+                    ? "opacity-60 bg-neutral-50/50 border-neutral-200"
+                    : "border-[#E5E5E5]"
+                }`}
               >
                 <div>
-                  {/* Card Header */}
+                  {/* Top Client Header */}
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                       <UserAvatar name={client.name} size="md" />
-                      <div className="overflow-hidden">
-                        <h3 className="font-bold text-[#1A1A1A] text-sm truncate group-hover:text-[#004AC6] transition-colors">
-                          {client.name}
-                        </h3>
-                        {client.company_name ? (
-                          <div className="flex items-center gap-1 text-xs text-[#707070] mt-0.5 truncate">
-                            <Building2 className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-                            <span className="truncate">{client.company_name}</span>
-                          </div>
-                        ) : (
-                          <span className="text-[11px] text-neutral-400">فردي / مستقل</span>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h3 className="text-sm font-bold text-[#1A1A1A] truncate">
+                            {client.name}
+                          </h3>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-[#004AC6] font-semibold">
+                            {clientTypeLabel}
+                          </span>
+                        </div>
+                        {client.company_name && (
+                          <p className="text-xs text-[#707070] flex items-center gap-1 mt-0.5 truncate">
+                            <Building2 className="w-3 h-3 shrink-0" />
+                            <span>{client.company_name}</span>
+                          </p>
                         )}
                       </div>
                     </div>
 
                     <span
-                      className={`px-3 py-1 rounded-full text-[11px] font-bold shrink-0 ${
+                      className={`text-[10px] px-2.5 py-0.5 rounded-full font-semibold shrink-0 ${
                         client.active === 1
-                          ? "bg-blue-50 text-[#004AC6] border border-blue-100"
-                          : "bg-neutral-100 text-neutral-500 border border-neutral-200"
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-neutral-100 text-neutral-600"
                       }`}
                     >
                       {client.active === 1 ? "نشط" : "مؤرشف"}
                     </span>
                   </div>
 
-                  {/* Contact Info */}
-                  <div className="mt-4 pt-3 border-t border-neutral-100 space-y-1.5">
-                    {client.phone ? (
-                      <div className="flex items-center gap-2 text-xs text-[#707070]">
-                        <Phone className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-                        <span dir="ltr" className="font-mono">
-                          {client.phone}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="text-xs text-neutral-400">لا يوجد رقم هاتف</div>
+                  {/* Contact Info Badges */}
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-[#707070]">
+                    {client.phone && (
+                      <span className="flex items-center gap-1 font-mono text-[11px] bg-neutral-50 px-2 py-1 rounded-md">
+                        <Phone className="w-3 h-3 text-neutral-400" />
+                        <span dir="ltr">{client.phone}</span>
+                      </span>
                     )}
-                  </div>
-
-                  {/* Financial Status (Clean Calm ATHREDU Layout) */}
-                  <div className="mt-4 pt-3 border-t border-neutral-100 space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-neutral-500 font-medium">مستحقات معلقة:</span>
-                      {hasDues ? (
-                        <BdiCurrency
-                          piasters={client.outstandingDuesPiasters}
-                          className="font-bold text-rose-600 font-mono"
-                        />
-                      ) : (
-                        <span className="text-neutral-400 font-mono">0.00 ج.م</span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-neutral-500 font-medium">رصيد دائن (Credit):</span>
-                      {hasCredit ? (
-                        <BdiCurrency
-                          piasters={client.creditPiasters}
-                          className="font-bold text-emerald-600 font-mono"
-                        />
-                      ) : (
-                        <span className="text-neutral-400 font-mono">0.00 ج.م</span>
-                      )}
-                    </div>
+                    {client.whatsapp && client.whatsapp !== client.phone && (
+                      <span className="flex items-center gap-1 font-mono text-[11px] bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md">
+                        <MessageCircle className="w-3 h-3 text-emerald-600" />
+                        <span dir="ltr">{client.whatsapp}</span>
+                      </span>
+                    )}
+                    {client.city && (
+                      <span className="flex items-center gap-1 text-[11px] bg-neutral-50 px-2 py-1 rounded-md">
+                        <MapPin className="w-3 h-3 text-neutral-400" />
+                        <span>{client.city}</span>
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                {/* Card Actions (Capsule Buttons) */}
-                <div className="mt-6 pt-4 border-t border-neutral-100 flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedClientId(client.id)}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-[#004AC6] hover:underline"
-                  >
-                    <span>عرض الملف 360°</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </button>
-
-                  <div className="flex items-center gap-1.5">
-                    {onOpenPaymentModal && (
-                      <button
-                        type="button"
-                        onClick={() => onOpenPaymentModal(client)}
-                        title="تسجيل دفعة"
-                        className="p-2 rounded-full bg-neutral-100 text-neutral-600 hover:bg-neutral-200 hover:text-[#004AC6] active:scale-95 transition-all"
-                      >
-                        <Wallet className="w-3.5 h-3.5" />
-                      </button>
+                {/* Financial Summary & Actions */}
+                <div className="mt-4 pt-3 border-t border-neutral-100 flex items-center justify-between gap-2">
+                  <div className="space-y-0.5">
+                    {hasDues ? (
+                      <div className="text-xs font-bold text-rose-600 flex items-center gap-1">
+                        <span>مستحق:</span>
+                        <BdiCurrency piasters={client.outstandingDuesPiasters} />
+                      </div>
+                    ) : hasCredit ? (
+                      <div className="text-xs font-bold text-emerald-600 flex items-center gap-1">
+                        <span>رصيد:</span>
+                        <BdiCurrency piasters={client.creditPiasters} />
+                      </div>
+                    ) : (
+                      <span className="text-xs text-neutral-400 font-medium">
+                        لا توجد مستحقات
+                      </span>
                     )}
+                  </div>
 
+                  <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
-                      onClick={() => {
-                        setClientToEdit(client);
-                        setIsFormModalOpen(true);
-                      }}
-                      title="تعديل العميل"
-                      className="p-2 rounded-full bg-neutral-100 text-neutral-600 hover:bg-neutral-200 active:scale-95 transition-all"
+                      onClick={() => onOpenHeaderForm?.("form-client")}
+                      title="تعديل بيانات العميل"
+                      className="p-2 rounded-full bg-neutral-100 text-neutral-600 hover:bg-neutral-200 active:scale-95 transition-all cursor-pointer whitespace-nowrap shrink-0"
                     >
                       <Edit className="w-3.5 h-3.5" />
                     </button>
@@ -395,7 +361,7 @@ export const ClientList: React.FC<ClientListProps> = ({
                       type="button"
                       onClick={() => handleToggleArchive(client)}
                       title={client.active === 1 ? "أرشفة العميل" : "استعادة العميل"}
-                      className="p-2 rounded-full bg-neutral-100 text-neutral-600 hover:bg-neutral-200 active:scale-95 transition-all"
+                      className="p-2 rounded-full bg-neutral-100 text-neutral-600 hover:bg-neutral-200 active:scale-95 transition-all cursor-pointer whitespace-nowrap shrink-0"
                     >
                       {client.active === 1 ? (
                         <Archive className="w-3.5 h-3.5" />
@@ -411,19 +377,11 @@ export const ClientList: React.FC<ClientListProps> = ({
         </div>
       )}
 
-      {/* Form Modal */}
-      <ClientFormModal
-        isOpen={isFormModalOpen}
-        onClose={() => {
-          setIsFormModalOpen(false);
-          setClientToEdit(null);
-        }}
-        clientToEdit={clientToEdit}
-        onSaved={async () => {
-          setIsFormModalOpen(false);
-          setClientToEdit(null);
-          await loadClients();
-        }}
+      {/* Custom Fields Settings Modal */}
+      <CustomFieldsSettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+        onChanged={loadClients}
       />
 
       {/* 360 Profile Modal */}
@@ -432,6 +390,9 @@ export const ClientList: React.FC<ClientListProps> = ({
           clientId={selectedClientId}
           isOpen={!!selectedClientId}
           onClose={() => setSelectedClientId(null)}
+          onEditClient={(_client) => {
+            onOpenHeaderForm?.('form-client');
+          }}
           onRecordPayment={(client) => {
             if (onOpenPaymentModal) onOpenPaymentModal(client);
           }}
@@ -441,3 +402,5 @@ export const ClientList: React.FC<ClientListProps> = ({
     </div>
   );
 };
+
+export default ClientList;

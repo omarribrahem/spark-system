@@ -4,11 +4,9 @@ import { getDatabaseDriver } from '../../database/driver';
 import {
   fetchSubscriptions,
   SubscriptionWithDetails,
-  SubscriptionRecord,
-} from './contract-service';
+  } from './contract-service';
 import { BdiCurrency, BdiDate } from '../../ui/bdi';
 import { SkeletonCard, EmptyState, ActionableError } from '../../ui/feedback';
-import { SubscriptionModal } from './SubscriptionModal';
 import { Select } from '../../ui/athredu/Select';
 
 export interface SubscriptionsListProps {
@@ -30,19 +28,12 @@ export const SubscriptionsList: React.FC<SubscriptionsListProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  // Modal
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [subscriptionToEdit, setSubscriptionToEdit] = useState<SubscriptionRecord | null>(null);
-
   useEffect(() => {
     if (onRequestNewSubscription) {
-      setSubscriptionToEdit(null);
-      setIsModalOpen(true);
-      if (onResetNewSubscriptionRequest) {
-        onResetNewSubscriptionRequest();
-      }
+      if (onOpenHeaderForm) onOpenHeaderForm();
+      if (onResetNewSubscriptionRequest) onResetNewSubscriptionRequest();
     }
-  }, [onRequestNewSubscription, onResetNewSubscriptionRequest]);
+  }, [onRequestNewSubscription, onResetNewSubscriptionRequest, onOpenHeaderForm]);
 
   const loadData = useCallback(async () => {
     try {
@@ -133,15 +124,8 @@ export const SubscriptionsList: React.FC<SubscriptionsListProps> = ({
 
           <button
             type="button"
-            onClick={() => {
-              if (onOpenHeaderForm) {
-                onOpenHeaderForm();
-              } else {
-                setSubscriptionToEdit(null);
-                setIsModalOpen(true);
-              }
-            }}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#004AC6] hover:bg-[#003bb0] active:scale-95 text-white text-xs font-bold transition-all shadow-sm"
+            onClick={() => onOpenHeaderForm?.()}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#004AC6] hover:bg-[#003bb0] active:scale-[0.98] text-white text-xs font-bold transition-all shadow-sm whitespace-nowrap shrink-0"
           >
             <PlusCircle className="w-4 h-4" />
             <span>اشتراك جديد</span>
@@ -171,10 +155,7 @@ export const SubscriptionsList: React.FC<SubscriptionsListProps> = ({
               : 'يمكنك تسجيل اشتراكات الخدمات الدورية (استضافة، أدوات تسويق، صيانة) وربطها بالعملاء.'
           }
           actionLabel="تسجيل اشتراك خدمة الآن"
-          onAction={() => {
-            setSubscriptionToEdit(null);
-            setIsModalOpen(true);
-          }}
+          onAction={() => onOpenHeaderForm?.()}
         />
       ) : (
         <div className="bg-white rounded-[2rem] border border-[#E5E5E5] overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
@@ -250,11 +231,8 @@ export const SubscriptionsList: React.FC<SubscriptionsListProps> = ({
                     <td className="px-5 py-4 text-center">
                       <button
                         type="button"
-                        onClick={() => {
-                          setSubscriptionToEdit(sub);
-                          setIsModalOpen(true);
-                        }}
-                        className="px-3 py-1.5 rounded-full bg-neutral-100 hover:bg-neutral-200 text-[#1A1A1A] text-xs font-medium transition-all"
+                        onClick={() => onOpenHeaderForm?.()}
+                        className="px-3 py-1.5 rounded-full bg-neutral-100 hover:bg-neutral-200 text-[#1A1A1A] text-xs font-medium transition-all whitespace-nowrap shrink-0"
                       >
                         تعديل
                       </button>
@@ -266,14 +244,6 @@ export const SubscriptionsList: React.FC<SubscriptionsListProps> = ({
           </div>
         </div>
       )}
-
-      {/* Subscription Modal */}
-      <SubscriptionModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSaved={loadData}
-        subscriptionToEdit={subscriptionToEdit}
-      />
     </div>
   );
 };

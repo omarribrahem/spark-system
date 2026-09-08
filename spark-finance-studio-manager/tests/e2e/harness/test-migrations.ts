@@ -14,6 +14,13 @@ export const SCHEMA_DDL: string[] = [
     secondary_phone TEXT,
     status TEXT NOT NULL DEFAULT 'active', -- active, inactive
     notes TEXT,
+    client_type TEXT DEFAULT 'individual',
+    contact_name TEXT,
+    contact_role TEXT,
+    whatsapp TEXT,
+    email TEXT,
+    city TEXT,
+    preferred_contact TEXT DEFAULT 'phone',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );`,
@@ -291,6 +298,268 @@ export const SCHEMA_DDL: string[] = [
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );`,
+
+  // 23. Custom Field Definitions
+  `CREATE TABLE IF NOT EXISTS client_custom_field_definitions (
+    id TEXT PRIMARY KEY,
+    field_key TEXT NOT NULL UNIQUE,
+    label TEXT NOT NULL,
+    field_type TEXT NOT NULL,
+    section TEXT NOT NULL DEFAULT 'general',
+    help_text TEXT,
+    required INTEGER NOT NULL DEFAULT 0,
+    searchable INTEGER NOT NULL DEFAULT 0,
+    filterable INTEGER NOT NULL DEFAULT 1,
+    active INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );`,
+
+  // 24. Custom Field Options
+  `CREATE TABLE IF NOT EXISTS client_custom_field_options (
+    id TEXT PRIMARY KEY,
+    field_definition_id TEXT NOT NULL,
+    value_key TEXT NOT NULL,
+    label TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (field_definition_id) REFERENCES client_custom_field_definitions(id) ON DELETE CASCADE,
+    CONSTRAINT uq_client_field_option UNIQUE (field_definition_id, value_key)
+  );`,
+
+  // 25. Single-value Custom Field Values
+  `CREATE TABLE IF NOT EXISTS client_custom_field_values (
+    client_id TEXT NOT NULL,
+    field_definition_id TEXT NOT NULL,
+    text_value TEXT,
+    number_value INTEGER,
+    date_value TEXT,
+    boolean_value INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (client_id, field_definition_id),
+    FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+    FOREIGN KEY (field_definition_id) REFERENCES client_custom_field_definitions(id) ON DELETE RESTRICT
+  );`,
+
+  // 26. Multi-Select Child Relation
+  `CREATE TABLE IF NOT EXISTS client_custom_field_multiselect_values (
+    client_id TEXT NOT NULL,
+    field_definition_id TEXT NOT NULL,
+    option_id TEXT NOT NULL,
+    PRIMARY KEY (client_id, field_definition_id, option_id),
+    FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+    FOREIGN KEY (field_definition_id) REFERENCES client_custom_field_definitions(id) ON DELETE RESTRICT,
+    FOREIGN KEY (option_id) REFERENCES client_custom_field_options(id) ON DELETE CASCADE
+  );`,
+
+  // 27. Filter Presets
+  `CREATE TABLE IF NOT EXISTS client_filter_presets (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    rules_json TEXT NOT NULL,
+    schema_version INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );`,
+
+  // 28. Plan Template Entitlements (M004)
+  `CREATE TABLE IF NOT EXISTS plan_template_entitlements (
+    id TEXT PRIMARY KEY,
+    plan_template_id TEXT NOT NULL,
+    entitlement_name TEXT NOT NULL,
+    entitlement_key TEXT NOT NULL,
+    quantity INTEGER NOT NULL,
+    unit TEXT NOT NULL,
+    allow_overage INTEGER NOT NULL DEFAULT 0,
+    rollover_allowed INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );`,
+
+  // 29. Sold Plans (M004)
+  `CREATE TABLE IF NOT EXISTS sold_plans (
+    id TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    plan_template_id TEXT,
+    name_snapshot TEXT NOT NULL,
+    price_snapshot INTEGER NOT NULL,
+    discount_snapshot INTEGER NOT NULL DEFAULT 0,
+    tax_snapshot INTEGER NOT NULL DEFAULT 0,
+    total_snapshot INTEGER NOT NULL,
+    billing_method TEXT NOT NULL DEFAULT 'entitlement_package',
+    terms_snapshot TEXT,
+    start_date TEXT NOT NULL,
+    end_date TEXT,
+    renewal_date TEXT,
+    service_status TEXT NOT NULL DEFAULT 'active',
+    collection_status TEXT NOT NULL DEFAULT 'unpaid',
+    assignee TEXT,
+    agreement_id TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (client_id) REFERENCES clients(id)
+  );`,
+
+  // 30. Sold Plan Entitlements (M004)
+  `CREATE TABLE IF NOT EXISTS sold_plan_entitlements (
+    id TEXT PRIMARY KEY,
+    sold_plan_id TEXT NOT NULL,
+    entitlement_name TEXT NOT NULL,
+    entitlement_key TEXT NOT NULL,
+    quantity_initial INTEGER NOT NULL,
+    quantity_used INTEGER NOT NULL DEFAULT 0,
+    quantity_reserved INTEGER NOT NULL DEFAULT 0,
+    quantity_remaining INTEGER NOT NULL,
+    unit TEXT NOT NULL,
+    allow_overage INTEGER NOT NULL DEFAULT 0,
+    rollover_allowed INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (sold_plan_id) REFERENCES sold_plans(id) ON DELETE CASCADE
+  );`,
+
+  // 31. Client Agreements (M004)
+  `CREATE TABLE IF NOT EXISTS client_agreements (
+    id TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    service_id TEXT,
+    plan_template_id TEXT,
+    agreement_number TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    agreement_type TEXT NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT,
+    renewal_date TEXT,
+    billing_method TEXT NOT NULL,
+    agreed_amount INTEGER NOT NULL,
+    discount_amount INTEGER NOT NULL DEFAULT 0,
+    tax_amount INTEGER NOT NULL DEFAULT 0,
+    total_amount INTEGER NOT NULL,
+    service_status TEXT NOT NULL DEFAULT 'active',
+    collection_status TEXT NOT NULL DEFAULT 'unpaid',
+    assignee TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (client_id) REFERENCES clients(id)
+  );`,
+
+  // 32. Workflow Stages (M004)
+  `CREATE TABLE IF NOT EXISTS workflow_stages (
+    id TEXT PRIMARY KEY,
+    workflow_type TEXT NOT NULL,
+    stage_key TEXT NOT NULL,
+    label TEXT NOT NULL,
+    color_class TEXT NOT NULL,
+    sort_order INTEGER NOT NULL,
+    is_protected INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(workflow_type, stage_key)
+  );`,
+
+  // 33. App Custom Field Definitions (M004)
+  `CREATE TABLE IF NOT EXISTS app_custom_field_definitions (
+    id TEXT PRIMARY KEY,
+    entity_scope TEXT NOT NULL,
+    field_key TEXT NOT NULL,
+    label TEXT NOT NULL,
+    field_type TEXT NOT NULL,
+    required INTEGER NOT NULL DEFAULT 0,
+    default_value TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1,
+    show_in_form INTEGER NOT NULL DEFAULT 1,
+    show_in_table INTEGER NOT NULL DEFAULT 1,
+    filterable INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(entity_scope, field_key)
+  );`,
+
+  // 34. App Custom Field Options (M004)
+  `CREATE TABLE IF NOT EXISTS app_custom_field_options (
+    id TEXT PRIMARY KEY,
+    field_definition_id TEXT NOT NULL,
+    value_key TEXT NOT NULL,
+    label TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (field_definition_id) REFERENCES app_custom_field_definitions(id) ON DELETE CASCADE,
+    UNIQUE(field_definition_id, value_key)
+  );`,
+
+  // 35. App Custom Field Values (M004)
+  `CREATE TABLE IF NOT EXISTS app_custom_field_values (
+    id TEXT PRIMARY KEY,
+    entity_scope TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    field_definition_id TEXT NOT NULL,
+    text_value TEXT,
+    number_value INTEGER,
+    date_value TEXT,
+    boolean_value INTEGER,
+    option_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (field_definition_id) REFERENCES app_custom_field_definitions(id) ON DELETE CASCADE,
+    UNIQUE(entity_scope, entity_id, field_definition_id)
+  );`,
+
+  // 36. App Custom Field Multiselect Values (M004)
+  `CREATE TABLE IF NOT EXISTS app_custom_field_multiselect_values (
+    entity_scope TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    field_definition_id TEXT NOT NULL,
+    option_id TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY(entity_scope, entity_id, field_definition_id, option_id)
+  );`,
+
+  // 37. General Audit Logs (M004)
+  `CREATE TABLE IF NOT EXISTS general_audit_logs (
+    id TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    user_id TEXT,
+    change_reason TEXT NOT NULL,
+    old_values_json TEXT,
+    new_values_json TEXT,
+    timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+  );`,
+
+  // 38. Users Table (M005)
+  `CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    role TEXT NOT NULL DEFAULT 'viewer',
+    active INTEGER NOT NULL DEFAULT 1,
+    avatar_url TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );`,
+
+  // 39. Backup Records Table (M005)
+  `CREATE TABLE IF NOT EXISTS backup_records (
+    id TEXT PRIMARY KEY,
+    filename TEXT NOT NULL,
+    file_path TEXT,
+    file_size_bytes INTEGER NOT NULL,
+    sha256_hash TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'success',
+    failure_reason TEXT,
+    storage_type TEXT NOT NULL DEFAULT 'local',
+    gdrive_file_id TEXT,
+    snapshot_metadata_json TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );`
 ];
 

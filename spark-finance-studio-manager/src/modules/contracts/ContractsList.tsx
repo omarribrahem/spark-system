@@ -20,21 +20,21 @@ import {
   generateMonthlyDuesForActiveContracts,
   MarketingContractWithDetails,
 } from './contract-service';
-import { ContractRepository, MarketingContractRecord } from '../../database/repositories';
+import { ContractRepository } from '../../database/repositories';
 import { BdiCurrency, BdiDate } from '../../ui/bdi';
 import { SkeletonCard, EmptyState, ActionableError } from '../../ui/feedback';
 import { Select } from '../../ui/athredu/Select';
-import { ContractFormModal } from './ContractFormModal';
 import { SubscriptionsList } from './SubscriptionsList';
 import { WebsiteProjectsList } from './WebsiteProjectsList';
+import { ServicesCatalogView } from './ServicesCatalogView';
 
-export type ContractsTab = 'marketing' | 'subscriptions' | 'website';
+export type ContractsTab = 'marketing' | 'subscriptions' | 'website' | 'services';
 
 export interface ContractsListProps {
   onRequestNewContract?: boolean;
   onResetNewContractRequest?: () => void;
   preselectedClientId?: string | null;
-  onOpenHeaderForm?: (mode: "form-contract" | "form-subscription" | "form-website") => void;
+  onOpenHeaderForm?: (mode: "form-contract" | "form-subscription" | "form-website" | "form-service") => void;
 }
 
 export const ContractsList: React.FC<ContractsListProps> = ({
@@ -55,10 +55,6 @@ export const ContractsList: React.FC<ContractsListProps> = ({
   // Expanded dues drawer per contract
   const [expandedContractId, setExpandedContractId] = useState<string | null>(null);
 
-  // Modals
-  const [isContractModalOpen, setIsContractModalOpen] = useState(false);
-  const [contractToEdit, setContractToEdit] = useState<MarketingContractRecord | null>(null);
-
   // Quick Action Feedback
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [isGeneratingDues, setIsGeneratingDues] = useState(false);
@@ -66,13 +62,10 @@ export const ContractsList: React.FC<ContractsListProps> = ({
   useEffect(() => {
     if (onRequestNewContract) {
       setActiveTab('marketing');
-      setContractToEdit(null);
-      setIsContractModalOpen(true);
-      if (onResetNewContractRequest) {
-        onResetNewContractRequest();
-      }
+      if (onOpenHeaderForm) onOpenHeaderForm('form-contract');
+      if (onResetNewContractRequest) onResetNewContractRequest();
     }
-  }, [onRequestNewContract, onResetNewContractRequest]);
+  }, [onRequestNewContract, onResetNewContractRequest, onOpenHeaderForm]);
 
   const loadData = useCallback(async () => {
     try {
@@ -214,6 +207,19 @@ export const ContractsList: React.FC<ContractsListProps> = ({
           <Globe className="w-3.5 h-3.5 text-blue-600" />
           <span>المواقع</span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('services')}
+          className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-full transition-all select-none ${
+            activeTab === 'services'
+              ? 'bg-white text-[#1A1A1A] shadow-sm font-bold'
+              : 'text-[#707070] hover:text-[#1A1A1A]'
+          }`}
+        >
+          <Layers className="w-3.5 h-3.5 text-sky-600" />
+          <span>دليل الخدمات المعتمدة</span>
+        </button>
       </div>
 
       {/* FEEDBACK TOAST / BANNER */}
@@ -282,15 +288,8 @@ export const ContractsList: React.FC<ContractsListProps> = ({
 
               <button
                 type="button"
-                onClick={() => {
-                  if (onOpenHeaderForm) {
-                    onOpenHeaderForm('form-contract');
-                  } else {
-                    setContractToEdit(null);
-                    setIsContractModalOpen(true);
-                  }
-                }}
-                className="flex items-center gap-2 h-11 px-5 rounded-full bg-[#004AC6] hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95"
+                onClick={() => onOpenHeaderForm?.('form-contract')}
+                className="flex items-center gap-2 h-11 px-5 rounded-full bg-[#004AC6] hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-[0.98] whitespace-nowrap shrink-0"
               >
                 <PlusCircle className="w-4 h-4" />
                 <span>عقد جديد</span>
@@ -333,10 +332,7 @@ export const ContractsList: React.FC<ContractsListProps> = ({
               title="لا توجد عقود تسويق مسجلة"
               description="سجّل أول عقد تسويق لمتابعة الدفعات الدورية والبنود الشهرية."
               actionLabel="إنشاء عقد تسويق الآن"
-              onAction={() => {
-                setContractToEdit(null);
-                setIsContractModalOpen(true);
-              }}
+              onAction={() => onOpenHeaderForm?.('form-contract')}
             />
           ) : (
             <div className="bg-white rounded-[2rem] border border-[#E5E5E5] overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
@@ -447,8 +443,7 @@ export const ContractsList: React.FC<ContractsListProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setContractToEdit(contract);
-                                    setIsContractModalOpen(true);
+                                    onOpenHeaderForm?.('form-contract');
                                   }}
                                   className="px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold transition-all"
                                 >
@@ -555,14 +550,12 @@ export const ContractsList: React.FC<ContractsListProps> = ({
         />
       )}
 
-      {/* Contract Form Modal */}
-      <ContractFormModal
-        isOpen={isContractModalOpen}
-        onClose={() => setIsContractModalOpen(false)}
-        onSaved={loadData}
-        contractToEdit={contractToEdit}
-        preselectedClientId={preselectedClientId}
-      />
+      {/* TAB 4: SERVICES CATALOG */}
+      {activeTab === 'services' && (
+        <ServicesCatalogView
+          onOpenHeaderForm={onOpenHeaderForm ? () => onOpenHeaderForm('form-service') : undefined}
+        />
+      )}
     </div>
   );
 };

@@ -96,7 +96,20 @@ The application is structured as a **Desktop Monolith** hosted by **Tauri v2** o
 | **Browser LocalStorage / IndexedDB** | **Rejected**: Violates DRV-02 (Relational & Financial Integrity). Lacks ACID transactions, foreign key cascades, and complex SQL joins, making multi-target payment splitting and atomic backups fragile and prone to corruption. |
 | **Microservices / CQRS / Event Sourcing** | **Rejected**: Grossly over-engineered for a single-operator desktop tool. Standard Transaction Script pattern on relational SQLite satisfies all business invariants with minimal complexity. |
 
-### 2.3 The Dual-Driver Repository Pattern (`IDatabaseDriver`)
+### 2.3 Dynamic Custom Fields & Typed Filter AST Query Engine
+To enable Safaa and Spark administration to define bespoke client attributes without compromising relational integrity or resorting to un-indexed JSON blobs:
+1. **Normalized Relational Representation**:
+   - `client_custom_field_definitions`: Schema catalog with immutable snake_case `field_key`, types, and display flags.
+   - `client_custom_field_options`: Predefined options for select types.
+   - `client_custom_field_values`: Normalized typed columns (`text_value`, `number_value`, `date_value`, `boolean_value`) with `(client_id, field_definition_id)` composite primary key.
+   - `client_custom_field_multiselect_values`: Child junction table for multi-select options.
+2. **Typed Filter AST & Query Compiler**:
+   - Invariant: User search and filter conditions are compiled into an Abstract Syntax Tree (`FilterAST`) with strict allowlisted operators and fields.
+   - Execution occurs exclusively within SQLite (`queryWithFilterAST`) using subqueries and `EXISTS` to avoid N+1 queries and memory bloat.
+   - Safe parameter binding (`?`) ensures zero possibility of SQL injection.
+   - Preset configurations (`client_filter_presets`) allow saving and restoring complex filter rule sets with graceful degradation when custom fields are deactivated.
+
+### 2.4 The Dual-Driver Repository Pattern (`IDatabaseDriver`)
 To enable frictionless automated testing and UI development without requiring a native Rust build on every test run, the data access layer abstracts the SQLite driver behind a unified interface:
 
 ```typescript

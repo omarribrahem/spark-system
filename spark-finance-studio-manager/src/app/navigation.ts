@@ -1,4 +1,4 @@
-﻿export type NavSection =
+export type NavSection =
   | "dashboard"
   | "clients"
   | "finance"
@@ -8,4 +8,5 @@
   | "studio"
   | "reports"
   | "settings"
-  | "backup";
+  | "backup"
+  | "about";

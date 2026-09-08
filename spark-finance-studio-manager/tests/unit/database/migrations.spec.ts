@@ -21,9 +21,9 @@ describe('Database Driver & Migration Infrastructure', () => {
     expect(timeoutRes[0].timeout).toBe(5000);
   });
 
-  it('should run initial migration and create all 22 tables', async () => {
+  it('should run initial migration and create all 40 tables', async () => {
     const appliedCount = await runMigrations(driver);
-    expect(appliedCount).toBe(2);
+    expect(appliedCount).toBe(5);
 
     // Running again should apply 0 migrations (idempotent)
     const secondRunCount = await runMigrations(driver);
@@ -38,12 +38,24 @@ describe('Database Driver & Migration Infrastructure', () => {
 
     const expectedTables = [
       'activity_log',
+      'app_custom_field_definitions',
+      'app_custom_field_multiselect_values',
+      'app_custom_field_options',
+      'app_custom_field_values',
       'app_settings',
       'attachments',
+      'backup_records',
+      'client_agreements',
+      'client_custom_field_definitions',
+      'client_custom_field_multiselect_values',
+      'client_custom_field_options',
+      'client_custom_field_values',
+      'client_filter_presets',
       'client_package_items',
       'client_packages',
       'clients',
       'expenses',
+      'general_audit_logs',
       'marketing_contracts',
       'marketing_extras',
       'marketing_monthly_dues',
@@ -51,20 +63,68 @@ describe('Database Driver & Migration Infrastructure', () => {
       'package_templates',
       'payment_allocations',
       'payments',
+      'plan_template_entitlements',
+      'plan_templates',
       'recurring_booking_rules',
       'reel_items',
       'schema_migrations',
       'service_definitions',
+      'sold_plan_entitlements',
+      'sold_plans',
       'studio_bookings',
       'subscription_monthly_dues',
       'subscriptions',
+      'users',
       'website_projects',
+      'workflow_stages',
     ];
 
-    expect(tableNames.length).toBe(22);
+    expect(tableNames.length).toBe(40);
     for (const expected of expectedTables) {
       expect(tableNames).toContain(expected);
     }
+  });
+
+  it('should include extended client columns in migration 003', async () => {
+    await runMigrations(driver);
+
+    const clientCols = await driver.query<{ name: string }>(
+      `PRAGMA table_info(clients);`
+    );
+    const colNames = clientCols.map((c) => c.name);
+
+    expect(colNames).toContain('client_type');
+    expect(colNames).toContain('contact_name');
+    expect(colNames).toContain('contact_role');
+    expect(colNames).toContain('whatsapp');
+    expect(colNames).toContain('email');
+    expect(colNames).toContain('city');
+    expect(colNames).toContain('preferred_contact');
+  });
+
+  it('should include extended columns and default workflow stages in migration 004', async () => {
+    await runMigrations(driver);
+
+    const sDefCols = await driver.query<{ name: string }>(`PRAGMA table_info(service_definitions);`);
+    const sDefColNames = sDefCols.map((c) => c.name);
+    expect(sDefColNames).toContain('service_type_key');
+    expect(sDefColNames).toContain('default_price');
+    expect(sDefColNames).toContain('requires_contract');
+
+    const reelCols = await driver.query<{ name: string }>(`PRAGMA table_info(reel_items);`);
+    const reelColNames = reelCols.map((c) => c.name);
+    expect(reelColNames).toContain('sold_plan_id');
+    expect(reelColNames).toContain('priority');
+    expect(reelColNames).toContain('target_date');
+
+    const stages = await driver.query<{ stage_key: string; is_protected: number }>(
+      `SELECT stage_key, is_protected FROM workflow_stages ORDER BY sort_order ASC;`
+    );
+    expect(stages.length).toBe(7);
+    const delivered = stages.find((s) => s.stage_key === 'delivered');
+    expect(delivered?.is_protected).toBe(1);
+    const cancelled = stages.find((s) => s.stage_key === 'cancelled');
+    expect(cancelled?.is_protected).toBe(1);
   });
 
   it('should include updated_at in marketing_monthly_dues and subscription_monthly_dues', async () => {
@@ -175,5 +235,29 @@ describe('Database Driver & Migration Infrastructure', () => {
       [clientId]
     );
     expect(rows.length).toBe(0);
+  });
+
+  it('should seed default users and support backup records in migration 005', async () => {
+    await runMigrations(driver);
+
+    const users = await driver.query<{ id: string; role: string }>(
+      `SELECT id, role FROM users ORDER BY id ASC;`
+    );
+    expect(users.length).toBe(4);
+    const roles = users.map((u) => u.role);
+    expect(roles).toContain('admin');
+    expect(roles).toContain('finance');
+    expect(roles).toContain('operations');
+    expect(roles).toContain('viewer');
+
+    const backupCols = await driver.query<{ name: string }>(
+      `PRAGMA table_info(backup_records);`
+    );
+    const colNames = backupCols.map((c) => c.name);
+    expect(colNames).toContain('filename');
+    expect(colNames).toContain('sha256_hash');
+    expect(colNames).toContain('file_size_bytes');
+    expect(colNames).toContain('status');
+    expect(colNames).toContain('storage_type');
   });
 });

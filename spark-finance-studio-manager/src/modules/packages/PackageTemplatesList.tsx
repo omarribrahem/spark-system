@@ -7,7 +7,6 @@ import {
 } from './package-service';
 import { BdiCurrency } from '../../ui/bdi';
 import { SkeletonCard, EmptyState, ActionableError } from '../../ui/feedback';
-import { PackageTemplateModal } from './PackageTemplateModal';
 
 export interface PackageTemplatesListProps {
   onSellTemplate?: (template: PackageTemplateWithItems) => void;
@@ -26,13 +25,12 @@ export const PackageTemplatesList: React.FC<PackageTemplatesListProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [templateToEdit, setTemplateToEdit] = useState<PackageTemplateWithItems | null>(null);
+  
+  
 
   useEffect(() => {
     if (onRequestNewTemplate) {
-      setTemplateToEdit(null);
-      setIsModalOpen(true);
+      if (onOpenHeaderForm) onOpenHeaderForm();
       if (onResetNewTemplateRequest) {
         onResetNewTemplateRequest();
       }
@@ -81,15 +79,8 @@ export const PackageTemplatesList: React.FC<PackageTemplatesListProps> = ({
 
           <button
             type="button"
-            onClick={() => {
-              if (onOpenHeaderForm) {
-                onOpenHeaderForm();
-              } else {
-                setTemplateToEdit(null);
-                setIsModalOpen(true);
-              }
-            }}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#004AC6] hover:bg-[#003bb0] active:scale-95 text-white text-xs font-bold transition-all shadow-sm"
+            onClick={() => onOpenHeaderForm?.()}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#004AC6] hover:bg-[#003bb0] active:scale-[0.98] text-white whitespace-nowrap shrink-0 text-xs font-bold transition-all shadow-sm"
           >
             <PlusCircle className="w-4 h-4" />
             <span>قالب باقة جديد</span>
@@ -116,10 +107,7 @@ export const PackageTemplatesList: React.FC<PackageTemplatesListProps> = ({
           title="لا توجد قوالب باقات مسجلة"
           description="أضف قوالب باقات لتسهيل عملية البيع وتخصيص الساعات والريلز."
           actionLabel="إضافة قالب باقة"
-          onAction={() => {
-            setTemplateToEdit(null);
-            setIsModalOpen(true);
-          }}
+          onAction={() => onOpenHeaderForm?.()}
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -182,11 +170,8 @@ export const PackageTemplatesList: React.FC<PackageTemplatesListProps> = ({
                 <div className="mt-5 pt-2 flex items-center justify-between gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      setTemplateToEdit(tpl);
-                      setIsModalOpen(true);
-                    }}
-                    className="px-4 py-2 rounded-full bg-neutral-100 hover:bg-neutral-200 text-[#1A1A1A] text-xs font-semibold transition-all"
+                    onClick={() => onOpenHeaderForm?.()}
+                    className="px-4 py-2 rounded-full bg-neutral-100 hover:bg-neutral-200 text-[#1A1A1A] text-xs font-semibold transition-all whitespace-nowrap shrink-0"
                   >
                     تعديل
                   </button>
@@ -195,7 +180,7 @@ export const PackageTemplatesList: React.FC<PackageTemplatesListProps> = ({
                     <button
                       type="button"
                       onClick={() => onSellTemplate(tpl)}
-                      className="flex items-center gap-1.5 px-5 py-2 rounded-full bg-[#004AC6] hover:bg-[#003bb0] active:scale-95 text-white text-xs font-bold transition-all shadow-sm"
+                      className="flex items-center gap-1.5 px-5 py-2 rounded-full bg-[#004AC6] hover:bg-[#003bb0] active:scale-[0.98] text-white text-xs font-bold transition-all shadow-sm whitespace-nowrap shrink-0"
                     >
                       <ShoppingCart className="w-3.5 h-3.5" />
                       <span>بيع لعميل</span>
@@ -208,13 +193,7 @@ export const PackageTemplatesList: React.FC<PackageTemplatesListProps> = ({
         </div>
       )}
 
-      {/* Template Modal */}
-      <PackageTemplateModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSaved={loadData}
-        templateToEdit={templateToEdit}
-      />
+      
     </div>
   );
 };

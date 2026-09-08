@@ -22,7 +22,6 @@ import { PaymentMethod } from '../../domain/models/financial';
 import { BdiCurrency, BdiDate } from '../../ui/bdi';
 import { SkeletonCard, EmptyState, ActionableError } from '../../ui/feedback';
 import { Select } from '../../ui/athredu/Select';
-import { PaymentEntryModal } from './PaymentEntryModal';
 import { PaymentVoidModal } from './PaymentVoidModal';
 import { AttachmentViewer } from './AttachmentViewer';
 
@@ -59,14 +58,14 @@ export const PaymentsList: React.FC<PaymentsListProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Modals
-  const [isEntryModalOpen, setIsEntryModalOpen] = useState(false);
+  
   const [paymentToVoid, setPaymentToVoid] = useState<PaymentRecord | null>(null);
   const [viewingAllocationsPayment, setViewingAllocationsPayment] = useState<PaymentWithClientAndAllocations | null>(null);
   const [viewingAttachment, setViewingAttachment] = useState<{ path: string; name?: string } | null>(null);
 
   useEffect(() => {
     if (onRequestNewPayment) {
-      setIsEntryModalOpen(true);
+      if (onOpenHeaderForm) onOpenHeaderForm();
       if (onResetNewPaymentRequest) {
         onResetNewPaymentRequest();
       }
@@ -289,14 +288,8 @@ export const PaymentsList: React.FC<PaymentsListProps> = ({
 
           <button
             type="button"
-            onClick={() => {
-              if (onOpenHeaderForm) {
-                onOpenHeaderForm();
-              } else {
-                setIsEntryModalOpen(true);
-              }
-            }}
-            className="inline-flex items-center gap-2 h-11 px-5 rounded-full bg-[#004AC6] hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 shrink-0"
+            onClick={() => onOpenHeaderForm?.()}
+            className="inline-flex items-center gap-2 h-11 px-5 rounded-full bg-[#004AC6] hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-[0.98] shrink-0 whitespace-nowrap"
           >
             <PlusCircle className="w-4 h-4" />
             <span>تسجيل دفعة</span>
@@ -321,7 +314,7 @@ export const PaymentsList: React.FC<PaymentsListProps> = ({
           title="لا توجد دفعات مسجلة"
           description="لم يتم العثور على أي حركات دفع تطابق معايير التصفية والبحث."
           actionLabel="+ تسجيل دفعة جديدة"
-          onAction={() => setIsEntryModalOpen(true)}
+          onAction={() => onOpenHeaderForm?.()}
         />
       ) : (
         <div className="overflow-x-auto border border-[#E5E5E5] rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.03)] bg-white overflow-hidden">
@@ -421,7 +414,7 @@ export const PaymentsList: React.FC<PaymentsListProps> = ({
                             name: `إيصال دفعة ${p.date}`,
                           })
                         }
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold transition-colors"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
                       >
                         <Paperclip className="w-3.5 h-3.5" />
                         <span>الإيصال</span>
@@ -436,7 +429,7 @@ export const PaymentsList: React.FC<PaymentsListProps> = ({
                       <button
                         type="button"
                         onClick={() => setPaymentToVoid(p)}
-                        className="px-3 py-1 rounded-full text-xs font-semibold text-rose-600 hover:bg-rose-50 transition-colors"
+                        className="px-3 py-1 rounded-full text-xs font-semibold text-rose-600 hover:bg-rose-50 transition-colors whitespace-nowrap shrink-0"
                       >
                         إلغاء
                       </button>
@@ -448,14 +441,6 @@ export const PaymentsList: React.FC<PaymentsListProps> = ({
           </table>
         </div>
       )}
-
-      {/* Payment Entry Modal */}
-      <PaymentEntryModal
-        isOpen={isEntryModalOpen}
-        onClose={() => setIsEntryModalOpen(false)}
-        preselectedClientId={selectedClientId !== 'all' ? selectedClientId : null}
-        onPaymentRecorded={loadData}
-      />
 
       {/* Payment Void Modal */}
       <PaymentVoidModal

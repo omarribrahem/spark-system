@@ -20,7 +20,6 @@ import { PackageRepository } from '../../database/repositories';
 import { PackageUnit } from '../../domain/models/package';
 import { BdiCurrency, BdiDate } from '../../ui/bdi';
 import { SkeletonCard, EmptyState, ActionableError } from '../../ui/feedback';
-import { ClientPackagePurchaseModal } from './ClientPackagePurchaseModal';
 import { Select } from '../../ui/athredu/Select';
 
 export interface ClientPackagesListProps {
@@ -35,7 +34,6 @@ export const ClientPackagesList: React.FC<ClientPackagesListProps> = ({
   onRequestNewPurchase,
   onResetNewPurchaseRequest,
   preselectedClientId,
-  initialTemplate,
   onOpenHeaderForm,
 }) => {
   const [packages, setPackages] = useState<ClientPackageDetails[]>([]);
@@ -46,11 +44,6 @@ export const ClientPackagesList: React.FC<ClientPackagesListProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  // Modals
-  const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
-  const [selectedTemplateForPurchase, setSelectedTemplateForPurchase] =
-    useState<PackageTemplateWithItems | null>(initialTemplate || null);
-
   // Consume modal / state
   const [consumingPkg, setConsumingPkg] = useState<ClientPackageDetails | null>(null);
   const [consumeUnit, setConsumeUnit] = useState<PackageUnit>('hours');
@@ -60,13 +53,10 @@ export const ClientPackagesList: React.FC<ClientPackagesListProps> = ({
 
   useEffect(() => {
     if (onRequestNewPurchase) {
-      setSelectedTemplateForPurchase(initialTemplate || null);
-      setIsPurchaseModalOpen(true);
-      if (onResetNewPurchaseRequest) {
-        onResetNewPurchaseRequest();
-      }
+      if (onOpenHeaderForm) onOpenHeaderForm();
+      if (onResetNewPurchaseRequest) onResetNewPurchaseRequest();
     }
-  }, [onRequestNewPurchase, onResetNewPurchaseRequest, initialTemplate]);
+  }, [onRequestNewPurchase, onResetNewPurchaseRequest, onOpenHeaderForm]);
 
   const loadData = useCallback(async () => {
     try {
@@ -192,15 +182,8 @@ export const ClientPackagesList: React.FC<ClientPackagesListProps> = ({
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => {
-              if (onOpenHeaderForm) {
-                onOpenHeaderForm();
-              } else {
-                setSelectedTemplateForPurchase(null);
-                setIsPurchaseModalOpen(true);
-              }
-            }}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#004AC6] hover:bg-[#003bb0] active:scale-95 text-white text-xs font-bold transition-all shadow-sm"
+            onClick={() => onOpenHeaderForm?.()}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#004AC6] hover:bg-[#003bb0] active:scale-[0.98] text-white whitespace-nowrap shrink-0 text-xs font-bold transition-all shadow-sm"
           >
             <PlusCircle className="w-4 h-4" />
             <span>بيع باقة لعميل</span>
@@ -275,10 +258,7 @@ export const ClientPackagesList: React.FC<ClientPackagesListProps> = ({
               : 'ابدأ ببيع أول باقة لعميل لتخصيص حصص الساعات والريلز ومتابعة الاستهلاك الفعلي.'
           }
           actionLabel="بيع باقة الآن"
-          onAction={() => {
-            setSelectedTemplateForPurchase(null);
-            setIsPurchaseModalOpen(true);
-          }}
+          onAction={() => onOpenHeaderForm?.()}
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -430,15 +410,6 @@ export const ClientPackagesList: React.FC<ClientPackagesListProps> = ({
           })}
         </div>
       )}
-
-      {/* Purchase Modal */}
-      <ClientPackagePurchaseModal
-        isOpen={isPurchaseModalOpen}
-        onClose={() => setIsPurchaseModalOpen(false)}
-        onSaved={loadData}
-        preselectedClientId={preselectedClientId}
-        initialTemplate={selectedTemplateForPurchase}
-      />
 
       {/* Manual Consume Modal */}
       {consumingPkg && (

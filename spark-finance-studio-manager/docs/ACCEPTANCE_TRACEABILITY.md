@@ -97,6 +97,9 @@ Every item defines its architectural module, pure domain calculator, target SQLi
 | **F-053** | Atomic Local Backup Engine | M7 | `src/modules/backup/` | `spark.db` + files | `VACUUM INTO` + ZIP bundle + SHA-256 manifest + 30-day retention. |
 | **F-054** | Safe Restore Engine | M7 | `src/modules/backup/` | Live data | Pre-restore safety backup, SHA-256 check, `PRAGMA integrity_check`. |
 | **F-055** | Google Drive Mirror | M7 | `src/modules/backup/` | ZIP archives | Opt-in background upload with desktop OAuth tokens in Windows Keychain. |
+| **F-056** | Extended Client Core Fields | M3+ | `src/modules/clients/` | `clients` | `client_type`, `whatsapp`, `email`, `city`, `preferred_contact`, contact role, phone sync. |
+| **F-057** | Dynamic Custom Fields & Settings | M3+ | `src/modules/clients/` | `client_custom_field_*` | Normalized typed custom values (money, date, text, multiselect), settings management & rollback. |
+| **F-058** | Typed Filter AST & Saved Presets | M3+ | `src/modules/clients/` | `client_filter_presets` | Typed AST SQLite query compiler, multi-rule chips, preset versioning, deactivation alerts. |
 
 ---
 

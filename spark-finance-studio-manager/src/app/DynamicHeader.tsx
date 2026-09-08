@@ -35,10 +35,11 @@ import {
   PackageRepository,
   ClientRecord,
   ClientPackageWithItems,
+  UniversalServiceRepository,
 } from "../database/repositories";
+import { BillingMethod } from "../domain/models/universal-service";
 import { PaymentMethod } from "../domain/models/financial";
-import { ExpenseCategory } from "../domain/models/expense";
-import { CATEGORY_OPTIONS } from "../modules/finance/ExpenseEntryModal";
+import { ExpenseCategory, CATEGORY_OPTIONS } from "../domain/models/expense";
 import { createSubscription } from "../modules/contracts/contract-service";
 import {
   fetchPackageTemplates,
@@ -47,6 +48,7 @@ import {
   PackageTemplateWithItems,
 } from "../modules/packages/package-service";
 import { saveReel, ReelStage, REEL_STAGES } from "../modules/reels/reels-service";
+import { createStudioBooking, StudioOverlapConflictError } from "../modules/studio/studio-service";
 import { Select } from "../ui/athredu/Select";
 import { Button } from "../ui/athredu/Button";
 
@@ -67,6 +69,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "studio", label: "جدول الاستوديو", icon: CalendarCheck, colorClass: "text-sky-600 bg-sky-50" },
   { id: "reports", label: "التقارير المالية", icon: BarChart3, colorClass: "text-teal-600 bg-teal-50" },
   { id: "backup", label: "النسخ والبيانات", icon: Database, colorClass: "text-slate-600 bg-slate-100" },
+  { id: "about", label: "حول وحالة النظام", icon: Info, colorClass: "text-blue-600 bg-blue-50" },
 ];
 
 export interface QuickActionItem {
@@ -86,6 +89,9 @@ export const QUICK_ACTIONS: QuickActionItem[] = [
   { id: "new-website", title: "مشروع موقع", desc: "موقع ويب ومراحل دفع", icon: Globe, colorClass: "text-teal-600 bg-teal-50" },
   { id: "new-package", title: "بيع باقة", desc: "بيع باقة ساعات أو ريلز", icon: PackagePlus, colorClass: "text-violet-600 bg-violet-50" },
   { id: "new-package-template", title: "قالب باقة", desc: "إنشاء قالب باقة معتمد", icon: Boxes, colorClass: "text-purple-600 bg-purple-50" },
+  { id: "new-service", title: "تعريف خدمة", desc: "إضافة خدمة جديدة بنظام تسعير", icon: Layers, colorClass: "text-sky-600 bg-sky-50" },
+  { id: "new-plan-template", title: "قالب خطة معتمد", desc: "إنشاء قالب خطة مع استحقاقات", icon: Boxes, colorClass: "text-purple-600 bg-purple-50" },
+  { id: "new-sold-plan", title: "بيع خطة لعميل", desc: "تخصيص خطة مع تجميد السعر والبنود", icon: PackagePlus, colorClass: "text-violet-600 bg-violet-50" },
   { id: "new-reel", title: "ريلز جديد", desc: "إضافة فكرة لقمع الإنتاج", icon: Film, colorClass: "text-pink-600 bg-pink-50" },
   { id: "new-booking", title: "حجز استوديو", desc: "جلسة تصوير بالجدول", icon: CalendarCheck, colorClass: "text-sky-600 bg-sky-50" },
 ];
@@ -112,7 +118,11 @@ export type HeaderMode =
   | "form-website"
   | "form-package-buy"
   | "form-package-template"
-  | "form-reel";
+  | "form-reel"
+  | "form-service"
+  | "form-plan-template"
+  | "form-sold-plan"
+  | "form-booking";
 
 export interface DynamicHeaderProps {
   activeSection: NavSection;
@@ -347,6 +357,46 @@ export const DynamicHeader: React.FC<DynamicHeaderProps> = ({
   const [tplError, setTplError] = useState<string | null>(null);
   const [isTplSubmitting, setIsTplSubmitting] = useState(false);
 
+  // Embedded Universal Service Form State
+  const [srvName, setSrvName] = useState("");
+  const [srvTypeKey, setSrvTypeKey] = useState("retainer");
+  const [srvBillingMethod, setSrvBillingMethod] = useState<BillingMethod>("recurring");
+  const [srvPrice, setSrvPrice] = useState("");
+  const [srvDurationDays, setSrvDurationDays] = useState("30");
+  const [srvRequiresContract, setSrvRequiresContract] = useState(true);
+  const [srvAutoRenew, setSrvAutoRenew] = useState(true);
+  const [srvDescription, setSrvDescription] = useState("");
+  const [srvError, setSrvError] = useState<string | null>(null);
+  const [isSrvSubmitting, setIsSrvSubmitting] = useState(false);
+
+  // Embedded Universal Plan Template Form State
+  const [planTplName, setPlanTplName] = useState("");
+  const [planTplPrice, setPlanTplPrice] = useState("");
+  const [planTplBillingMethod, setPlanTplBillingMethod] = useState<BillingMethod>("entitlement_package");
+  const [planTplDurationDays, setPlanTplDurationDays] = useState("30");
+  const [planTplDescription, setPlanTplDescription] = useState("");
+  const [planTplHours, setPlanTplHours] = useState("10");
+  const [planTplReels, setPlanTplReels] = useState("4");
+  const [planTplPosts, setPlanTplPosts] = useState("12");
+  const [planTplError, setPlanTplError] = useState<string | null>(null);
+  const [isPlanTplSubmitting, setIsPlanTplSubmitting] = useState(false);
+
+  // Embedded Universal Sold Plan Form State
+  const [soldClientId, setSoldClientId] = useState("");
+  const [soldTemplateId, setSoldTemplateId] = useState("custom");
+  const [soldPlanName, setSoldPlanName] = useState("");
+  const [soldPlanPrice, setSoldPlanPrice] = useState("");
+  const [soldPlanDiscount, setSoldPlanDiscount] = useState("0");
+  const [soldPlanTax, setSoldPlanTax] = useState("0");
+  const [soldPlanBillingMethod, setSoldPlanBillingMethod] = useState<BillingMethod>("entitlement_package");
+  const [soldPlanStartDate, setSoldPlanStartDate] = useState(new Date().toISOString().split("T")[0]);
+  const [soldPlanEndDate, setSoldPlanEndDate] = useState("");
+  const [soldPlanHours, setSoldPlanHours] = useState("10");
+  const [soldPlanReels, setSoldPlanReels] = useState("4");
+  const [soldPlanNotes, setSoldPlanNotes] = useState("");
+  const [soldPlanError, setSoldPlanError] = useState<string | null>(null);
+  const [isSoldPlanSubmitting, setIsSoldPlanSubmitting] = useState(false);
+
   // Embedded Reel Form State
   const [reelClientId, setReelClientId] = useState<string>("");
   const [reelPackageId, setReelPackageId] = useState<string>("");
@@ -357,6 +407,15 @@ export const DynamicHeader: React.FC<DynamicHeaderProps> = ({
   const [reelError, setReelError] = useState<string | null>(null);
   const [isReelSubmitting, setIsReelSubmitting] = useState(false);
 
+  // Embedded Studio Booking Form State
+  const [bookingClientId, setBookingClientId] = useState<string>("");
+  const [bookingDate, setBookingDate] = useState<string>(() => new Date().toISOString().split("T")[0]);
+  const [bookingStartTime, setBookingStartTime] = useState<string>("10:00");
+  const [bookingEndTime, setBookingEndTime] = useState<string>("11:00");
+  const [bookingNotes, setBookingNotes] = useState<string>("");
+  const [bookingError, setBookingError] = useState<string | null>(null);
+  const [isBookingSubmitting, setIsBookingSubmitting] = useState(false);
+
   // Load clients & templates when entering relevant form modes
   useEffect(() => {
     const needsClients =
@@ -365,7 +424,9 @@ export const DynamicHeader: React.FC<DynamicHeaderProps> = ({
       mode === "form-subscription" ||
       mode === "form-website" ||
       mode === "form-package-buy" ||
-      mode === "form-reel";
+      mode === "form-reel" ||
+      mode === "form-sold-plan" ||
+      mode === "form-booking";
 
     if (needsClients) {
       void (async () => {
@@ -381,7 +442,9 @@ export const DynamicHeader: React.FC<DynamicHeaderProps> = ({
           if (!subClientId && defaultClientId) setSubClientId(defaultClientId);
           if (!webClientId && defaultClientId) setWebClientId(defaultClientId);
           if (!buyClientId && defaultClientId) setBuyClientId(defaultClientId);
+          if (!soldClientId && defaultClientId) setSoldClientId(defaultClientId);
           if (!reelClientId && defaultClientId) setReelClientId(defaultClientId);
+          if (!bookingClientId && defaultClientId) setBookingClientId(defaultClientId);
 
           if (mode === "form-package-buy") {
             const templates = await fetchPackageTemplates(driver);
@@ -826,6 +889,200 @@ export const DynamicHeader: React.FC<DynamicHeaderProps> = ({
     }
   };
 
+  // Handler: Create Universal Service
+  const handleCreateService = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!srvName.trim()) {
+      setSrvError("اسم الخدمة مطلوب");
+      return;
+    }
+    const numPrice = parseFloat(srvPrice);
+    if (isNaN(numPrice) || numPrice < 0) {
+      setSrvError("يرجى إدخال سعر صحيح للخدمة");
+      return;
+    }
+    try {
+      setIsSrvSubmitting(true);
+      setSrvError(null);
+      const driver = await getDatabaseDriver();
+      const repo = new UniversalServiceRepository(driver);
+      await repo.createService({
+        name: srvName.trim(),
+        serviceTypeKey: srvTypeKey,
+        billingMethod: srvBillingMethod,
+        defaultPrice: Math.round(numPrice * 100),
+        defaultDurationDays: srvDurationDays ? parseInt(srvDurationDays, 10) : null,
+        requiresContract: srvRequiresContract,
+        autoRenew: srvAutoRenew,
+        description: srvDescription.trim() || null,
+      });
+      setSrvName("");
+      setSrvPrice("");
+      setSrvDescription("");
+      setMode("compact");
+      if (onDataMutated) onDataMutated("تم تعريف الخدمة الجديدة بنجاح");
+    } catch (err: unknown) {
+      setSrvError(err instanceof Error ? err.message : "تعذر حفظ الخدمة");
+    } finally {
+      setIsSrvSubmitting(false);
+    }
+  };
+
+  // Handler: Create Plan Template
+  const handleCreatePlanTemplate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!planTplName.trim()) {
+      setPlanTplError("اسم قالب الخطة مطلوب");
+      return;
+    }
+    const numPrice = parseFloat(planTplPrice);
+    if (isNaN(numPrice) || numPrice < 0) {
+      setPlanTplError("يرجى إدخال سعر صحيح لقالب الخطة");
+      return;
+    }
+    try {
+      setIsPlanTplSubmitting(true);
+      setPlanTplError(null);
+      const driver = await getDatabaseDriver();
+      const repo = new UniversalServiceRepository(driver);
+      
+      const entitlements: Array<{ name: string; key: string; quantity: number; unit: string }> = [];
+      const hrs = parseFloat(planTplHours);
+      if (!isNaN(hrs) && hrs > 0) {
+        entitlements.push({ name: "ساعات استوديو", key: "hours", quantity: hrs, unit: "hours" });
+      }
+      const rls = parseInt(planTplReels, 10);
+      if (!isNaN(rls) && rls > 0) {
+        entitlements.push({ name: "إنتاج ريلز", key: "reels", quantity: rls, unit: "reels" });
+      }
+      const psts = parseInt(planTplPosts, 10);
+      if (!isNaN(psts) && psts > 0) {
+        entitlements.push({ name: "تصميم ونشر بوستات", key: "posts", quantity: psts, unit: "posts" });
+      }
+
+      await repo.createPlanTemplate({
+        name: planTplName.trim(),
+        billingMethod: planTplBillingMethod,
+        defaultPrice: Math.round(numPrice * 100),
+        durationDays: planTplDurationDays ? parseInt(planTplDurationDays, 10) : 30,
+        description: planTplDescription.trim() || null,
+        entitlements,
+      });
+
+      setPlanTplName("");
+      setPlanTplPrice("");
+      setPlanTplDescription("");
+      setMode("compact");
+      if (onDataMutated) onDataMutated("تم إنشاء وحفظ قالب الخطة بنجاح");
+    } catch (err: unknown) {
+      setPlanTplError(err instanceof Error ? err.message : "تعذر حفظ قالب الخطة");
+    } finally {
+      setIsPlanTplSubmitting(false);
+    }
+  };
+
+  // Handler: Sell Plan to Client
+  const handleSellPlanToClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!soldClientId) {
+      setSoldPlanError("يرجى اختيار العميل");
+      return;
+    }
+    if (!soldPlanName.trim()) {
+      setSoldPlanError("اسم الخطة المباعة مطلوب");
+      return;
+    }
+    const numPrice = parseFloat(soldPlanPrice);
+    if (isNaN(numPrice) || numPrice < 0) {
+      setSoldPlanError("يرجى إدخال سعر بيع صحيح");
+      return;
+    }
+    const numDiscount = parseFloat(soldPlanDiscount || "0") || 0;
+    const numTax = parseFloat(soldPlanTax || "0") || 0;
+
+    try {
+      setIsSoldPlanSubmitting(true);
+      setSoldPlanError(null);
+      const driver = await getDatabaseDriver();
+      const repo = new UniversalServiceRepository(driver);
+
+      const entitlements: Array<{ name: string; key: string; quantity: number; unit: string }> = [];
+      const hrs = parseFloat(soldPlanHours);
+      if (!isNaN(hrs) && hrs > 0) {
+        entitlements.push({ name: "ساعات استوديو", key: "hours", quantity: hrs, unit: "hours" });
+      }
+      const rls = parseInt(soldPlanReels, 10);
+      if (!isNaN(rls) && rls > 0) {
+        entitlements.push({ name: "إنتاج ريلز", key: "reels", quantity: rls, unit: "reels" });
+      }
+
+      await repo.sellPlan({
+        clientId: soldClientId,
+        planTemplateId: soldTemplateId !== "custom" ? soldTemplateId : null,
+        nameSnapshot: soldPlanName.trim(),
+        priceSnapshot: Math.round(numPrice * 100),
+        discountSnapshot: Math.round(numDiscount * 100),
+        taxSnapshot: Math.round(numTax * 100),
+        billingMethod: soldPlanBillingMethod,
+        startDate: soldPlanStartDate,
+        endDate: soldPlanEndDate || null,
+        notes: soldPlanNotes.trim() || null,
+        entitlements,
+      });
+
+      setSoldPlanName("");
+      setSoldPlanPrice("");
+      setSoldPlanNotes("");
+      setMode("compact");
+      if (onDataMutated) onDataMutated("تم بيع الخطة وتجميد استحقاقاتها في ملف العميل بنجاح");
+    } catch (err: unknown) {
+      setSoldPlanError(err instanceof Error ? err.message : "تعذر إتمام بيع الخطة");
+    } finally {
+      setIsSoldPlanSubmitting(false);
+    }
+  };
+
+  // Handler: Create Studio Booking
+  const handleCreateBooking = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bookingClientId) {
+      setBookingError("يرجى اختيار العميل أولاً");
+      return;
+    }
+    if (!bookingDate) {
+      setBookingError("يرجى تحديد تاريخ الجلسة");
+      return;
+    }
+    if (!bookingStartTime || !bookingEndTime) {
+      setBookingError("يرجى تحديد وقت بداية ونهاية الجلسة");
+      return;
+    }
+    try {
+      setIsBookingSubmitting(true);
+      setBookingError(null);
+      const driver = await getDatabaseDriver();
+      await createStudioBooking(driver, {
+        clientId: bookingClientId,
+        date: bookingDate,
+        startTime: bookingStartTime,
+        endTime: bookingEndTime,
+        notes: bookingNotes.trim() || null,
+      });
+
+      setBookingNotes("");
+      setMode("compact");
+      if (onDataMutated) onDataMutated("تم تسجيل جلسة الاستوديو بنجاح وإدراجها بالجدول");
+    } catch (err: unknown) {
+      if (err instanceof StudioOverlapConflictError) {
+        setBookingError("يوجد تعارض زمني مع حجز آخر في هذا التوقيت! يرجى اختيار موعد متاح.");
+      } else {
+        setBookingError(err instanceof Error ? err.message : "تعذر حفظ الحجز");
+      }
+    } finally {
+      setIsBookingSubmitting(false);
+    }
+  };
+
   const isFormMode = mode.startsWith("form-");
 
   return (
@@ -1119,6 +1376,10 @@ export const DynamicHeader: React.FC<DynamicHeaderProps> = ({
                         else if (act.id === "new-package") setMode("form-package-buy");
                         else if (act.id === "new-package-template") setMode("form-package-template");
                         else if (act.id === "new-reel") setMode("form-reel");
+                        else if (act.id === "new-service") setMode("form-service");
+                        else if (act.id === "new-plan-template") setMode("form-plan-template");
+                        else if (act.id === "new-sold-plan") setMode("form-sold-plan");
+                        else if (act.id === "new-booking") setMode("form-booking");
                         else {
                           setMode("compact");
                           if (onOpenQuickAddAction) onOpenQuickAddAction(act.id);
@@ -2118,7 +2379,7 @@ export const DynamicHeader: React.FC<DynamicHeaderProps> = ({
                 </div>
               </form>
             </motion.div>
-          ) : (
+          ) : mode === "form-reel" ? (
             /* 14. EMBEDDED FORM: REEL */
             <motion.div
               key="form-reel"
@@ -2249,7 +2510,620 @@ export const DynamicHeader: React.FC<DynamicHeaderProps> = ({
                 </div>
               </form>
             </motion.div>
-          )}
+          ) : mode === "form-service" ? (
+            /* 15. EMBEDDED FORM: SERVICE DEFINITION */
+            <motion.div
+              key="form-service"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.16 }}
+              className="flex flex-col w-full space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setMode("actions")}
+                    className="p-1 rounded-full hover:bg-neutral-100 text-neutral-500"
+                    title="رجوع للإجراءات"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                  <span className="text-sm font-bold text-[#1A1A1A]">تعريف خدمة جديدة</span>
+                </div>
+                <button
+                  onClick={() => setMode("compact")}
+                  className="h-7 w-7 rounded-full hover:bg-neutral-100 text-neutral-400 hover:text-neutral-700 flex items-center justify-center"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateService} className="space-y-3">
+                {srvError && (
+                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-100 text-rose-600 text-xs font-medium">
+                    {srvError}
+                  </div>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">اسم الخدمة *</label>
+                    <input
+                      type="text"
+                      value={srvName}
+                      onChange={(e) => setSrvName(e.target.value)}
+                      placeholder="مثال: إدارة حملات السوشيال ميديا"
+                      className="w-full h-11 px-3.5 rounded-full border border-[#E5E5E5] text-xs font-medium text-[#1A1A1A] focus:outline-none focus:border-[#004AC6]"
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">نوع التصنيف</label>
+                    <Select
+                      value={srvTypeKey}
+                      onValueChange={(val) => setSrvTypeKey(val)}
+                      options={[
+                        { value: "retainer", label: "ريتينر شهري مستمر" },
+                        { value: "package", label: "باقة رصيد واستحقاقات" },
+                        { value: "subscription", label: "اشتراك دوري متجدد" },
+                        { value: "custom", label: "خدمة حسب الطلب" },
+                      ]}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">طريقة الفوترة</label>
+                    <Select
+                      value={srvBillingMethod}
+                      onValueChange={(val) => setSrvBillingMethod(val as BillingMethod)}
+                      options={[
+                        { value: "recurring", label: "اشتراك دوري متكرر" },
+                        { value: "one_time", label: "دفعة واحدة" },
+                        { value: "project_installments", label: "أقساط مشروع" },
+                        { value: "hourly_or_quantity", label: "بالساعة أو الكمية" },
+                        { value: "entitlement_package", label: "باقة استحقاقات" },
+                      ]}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">السعر الافتراضي بالجنيه *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={srvPrice}
+                      onChange={(e) => setSrvPrice(e.target.value)}
+                      placeholder="مثال: 5000"
+                      className="w-full h-11 px-3.5 rounded-full border border-[#E5E5E5] text-xs font-medium text-[#1A1A1A] focus:outline-none focus:border-[#004AC6]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">المدة بالأيام</label>
+                    <input
+                      type="number"
+                      value={srvDurationDays}
+                      onChange={(e) => setSrvDurationDays(e.target.value)}
+                      placeholder="مثال: 30"
+                      className="w-full h-11 px-3.5 rounded-full border border-[#E5E5E5] text-xs font-medium text-[#1A1A1A] focus:outline-none focus:border-[#004AC6]"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-4 py-1">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-neutral-700">
+                    <input
+                      type="checkbox"
+                      checked={srvRequiresContract}
+                      onChange={(e) => setSrvRequiresContract(e.target.checked)}
+                      className="w-4 h-4 rounded text-[#004AC6]"
+                    />
+                    <span>تتطلب إبرام عقد رسمي</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-neutral-700">
+                    <input
+                      type="checkbox"
+                      checked={srvAutoRenew}
+                      onChange={(e) => setSrvAutoRenew(e.target.checked)}
+                      className="w-4 h-4 rounded text-[#004AC6]"
+                    />
+                    <span>تتجدد تلقائياً</span>
+                  </label>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-600 mb-1">وصف نطاق الخدمة</label>
+                  <input
+                    type="text"
+                    value={srvDescription}
+                    onChange={(e) => setSrvDescription(e.target.value)}
+                    placeholder="مخرجات الخدمة والاتفاقيات..."
+                    className="w-full h-10 px-3.5 rounded-xl border border-[#E5E5E5] text-xs font-medium text-[#1A1A1A] focus:outline-none focus:border-[#004AC6]"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100">
+                  <button
+                    type="button"
+                    onClick={() => setMode("compact")}
+                    className="h-9 px-4 rounded-full bg-neutral-100 hover:bg-neutral-200 text-xs font-semibold text-neutral-600"
+                  >
+                    إلغاء
+                  </button>
+                  <Button type="submit" variant="brand" size="sm" isLoading={isSrvSubmitting}>
+                    حفظ الخدمة
+                  </Button>
+                </div>
+              </form>
+            </motion.div>
+          ) : mode === "form-plan-template" ? (
+            /* 16. EMBEDDED FORM: UNIVERSAL PLAN TEMPLATE */
+            <motion.div
+              key="form-plan-template"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.16 }}
+              className="flex flex-col w-full space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setMode("actions")}
+                    className="p-1 rounded-full hover:bg-neutral-100 text-neutral-500"
+                    title="رجوع للإجراءات"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                  <span className="text-sm font-bold text-[#1A1A1A]">إنشاء قالب خطة معتمد</span>
+                </div>
+                <button
+                  onClick={() => setMode("compact")}
+                  className="h-7 w-7 rounded-full hover:bg-neutral-100 text-neutral-400 hover:text-neutral-700 flex items-center justify-center"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreatePlanTemplate} className="space-y-3">
+                {planTplError && (
+                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-100 text-rose-600 text-xs font-medium">
+                    {planTplError}
+                  </div>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">اسم قالب الخطة *</label>
+                    <input
+                      type="text"
+                      value={planTplName}
+                      onChange={(e) => setPlanTplName(e.target.value)}
+                      placeholder="مثال: باقة البراند المتكاملة"
+                      className="w-full h-11 px-3.5 rounded-full border border-[#E5E5E5] text-xs font-medium text-[#1A1A1A] focus:outline-none focus:border-[#004AC6]"
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">السعر الافتراضي بالجنيه *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={planTplPrice}
+                      onChange={(e) => setPlanTplPrice(e.target.value)}
+                      placeholder="مثال: 15000"
+                      className="w-full h-11 px-3.5 rounded-full border border-[#E5E5E5] text-xs font-medium text-[#1A1A1A] focus:outline-none focus:border-[#004AC6]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">طريقة الفوترة</label>
+                    <Select
+                      value={planTplBillingMethod}
+                      onValueChange={(val) => setPlanTplBillingMethod(val as BillingMethod)}
+                      options={[
+                        { value: "entitlement_package", label: "باقة استحقاقات رصيد" },
+                        { value: "recurring", label: "اشتراك دوري متجدد" },
+                        { value: "one_time", label: "دفعة واحدة" },
+                        { value: "project_installments", label: "مراحل مشروع" },
+                      ]}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">مدة الصلاحية بالأيام</label>
+                    <input
+                      type="number"
+                      value={planTplDurationDays}
+                      onChange={(e) => setPlanTplDurationDays(e.target.value)}
+                      placeholder="مثال: 30"
+                      className="w-full h-11 px-3.5 rounded-full border border-[#E5E5E5] text-xs font-medium text-[#1A1A1A] focus:outline-none focus:border-[#004AC6]"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-3 bg-neutral-50 rounded-2xl border border-neutral-200/70 space-y-2">
+                  <span className="block text-xs font-bold text-neutral-700">استحقاقات وبنود القالب</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[11px] text-neutral-500 mb-1">ساعات الاستوديو</label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        value={planTplHours}
+                        onChange={(e) => setPlanTplHours(e.target.value)}
+                        className="w-full h-9 px-3 rounded-full border border-[#E5E5E5] text-xs bg-white focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-neutral-500 mb-1">عدد الريلز</label>
+                      <input
+                        type="number"
+                        step="1"
+                        min="0"
+                        value={planTplReels}
+                        onChange={(e) => setPlanTplReels(e.target.value)}
+                        className="w-full h-9 px-3 rounded-full border border-[#E5E5E5] text-xs bg-white focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-neutral-500 mb-1">عدد البوستات</label>
+                      <input
+                        type="number"
+                        step="1"
+                        min="0"
+                        value={planTplPosts}
+                        onChange={(e) => setPlanTplPosts(e.target.value)}
+                        className="w-full h-9 px-3 rounded-full border border-[#E5E5E5] text-xs bg-white focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-600 mb-1">وصف أو شروط القالب</label>
+                  <input
+                    type="text"
+                    value={planTplDescription}
+                    onChange={(e) => setPlanTplDescription(e.target.value)}
+                    placeholder="ملاحظات وتفاصيل الاستخدام..."
+                    className="w-full h-10 px-3.5 rounded-xl border border-[#E5E5E5] text-xs font-medium text-[#1A1A1A] focus:outline-none focus:border-[#004AC6]"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100">
+                  <button
+                    type="button"
+                    onClick={() => setMode("compact")}
+                    className="h-9 px-4 rounded-full bg-neutral-100 hover:bg-neutral-200 text-xs font-semibold text-neutral-600"
+                  >
+                    إلغاء
+                  </button>
+                  <Button type="submit" variant="brand" size="sm" isLoading={isPlanTplSubmitting}>
+                    حفظ قالب الخطة
+                  </Button>
+                </div>
+              </form>
+            </motion.div>
+          ) : mode === "form-sold-plan" ? (
+            /* 17. EMBEDDED FORM: UNIVERSAL SOLD PLAN */
+            <motion.div
+              key="form-sold-plan"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.16 }}
+              className="flex flex-col w-full space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setMode("actions")}
+                    className="p-1 rounded-full hover:bg-neutral-100 text-neutral-500"
+                    title="رجوع للإجراءات"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                  <span className="text-sm font-bold text-[#1A1A1A]">بيع خطة لعميل (لقطة مجمدة)</span>
+                </div>
+                <button
+                  onClick={() => setMode("compact")}
+                  className="h-7 w-7 rounded-full hover:bg-neutral-100 text-neutral-400 hover:text-neutral-700 flex items-center justify-center"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSellPlanToClient} className="space-y-3">
+                {soldPlanError && (
+                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-100 text-rose-600 text-xs font-medium">
+                    {soldPlanError}
+                  </div>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">العميل *</label>
+                    <Select
+                      value={soldClientId}
+                      onValueChange={(val) => setSoldClientId(val)}
+                      options={clientsList.map((c) => ({
+                        value: c.id,
+                        label: `${c.name} ${c.company_name ? `(${c.company_name})` : ""}`,
+                      }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">قالب الخطة (اختياري)</label>
+                    <Select
+                      value={soldTemplateId}
+                      onValueChange={(val) => {
+                        setSoldTemplateId(val);
+                        if (val === "custom") {
+                          setSoldPlanName("خطة مخصصة");
+                        } else {
+                          const tpl = templatesList.find((t) => t.id === val);
+                          if (tpl) {
+                            setSoldPlanName(tpl.name);
+                            setSoldPlanPrice(String(tpl.default_price / 100));
+                            setSoldPlanHours(tpl.hoursMinutes > 0 ? String(tpl.hoursMinutes / 60) : "0");
+                            setSoldPlanReels(String(tpl.reelsCount || 0));
+                          }
+                        }
+                      }}
+                      options={[
+                        { value: "custom", label: "-- خطة مخصصة بدون قالب --" },
+                        ...templatesList.map((t) => ({
+                          value: t.id,
+                          label: `${t.name} (${(t.default_price / 100).toLocaleString("ar-EG")} ج.م)`,
+                        })),
+                      ]}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">طريقة الفوترة</label>
+                    <Select
+                      value={soldPlanBillingMethod}
+                      onValueChange={(val) => setSoldPlanBillingMethod(val as BillingMethod)}
+                      options={[
+                        { value: "entitlement_package", label: "باقة استحقاقات رصيد" },
+                        { value: "recurring", label: "اشتراك دوري متجدد" },
+                        { value: "one_time", label: "دفعة واحدة" },
+                        { value: "project_installments", label: "مراحل مشروع" },
+                      ]}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-600 mb-1">اسم الخطة المباعة (لقطة ثابتة) *</label>
+                  <input
+                    type="text"
+                    value={soldPlanName}
+                    onChange={(e) => setSoldPlanName(e.target.value)}
+                    placeholder="مثال: باقة المحتوى الذهبية - 10 س + 4 ريلز"
+                    className="w-full h-11 px-3.5 rounded-full border border-[#E5E5E5] text-xs font-medium text-[#1A1A1A] focus:outline-none focus:border-[#004AC6]"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">سعر البيع بالجنيه *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={soldPlanPrice}
+                      onChange={(e) => setSoldPlanPrice(e.target.value)}
+                      placeholder="مثال: 12000"
+                      className="w-full h-11 px-3.5 rounded-full border border-[#E5E5E5] text-xs font-medium text-[#1A1A1A] focus:outline-none focus:border-[#004AC6]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">الخصم الممنوح (ج.م)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={soldPlanDiscount}
+                      onChange={(e) => setSoldPlanDiscount(e.target.value)}
+                      placeholder="0"
+                      className="w-full h-11 px-3.5 rounded-full border border-[#E5E5E5] text-xs font-medium text-[#1A1A1A] focus:outline-none focus:border-[#004AC6]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">الضريبة (ج.م)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={soldPlanTax}
+                      onChange={(e) => setSoldPlanTax(e.target.value)}
+                      placeholder="0"
+                      className="w-full h-11 px-3.5 rounded-full border border-[#E5E5E5] text-xs font-medium text-[#1A1A1A] focus:outline-none focus:border-[#004AC6]"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-3 bg-neutral-50 rounded-2xl border border-neutral-200/70 space-y-2">
+                  <span className="block text-xs font-bold text-neutral-700">لقطة الاستحقاقات المجمدة</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] text-neutral-500 mb-1">ساعات الاستوديو</label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        value={soldPlanHours}
+                        onChange={(e) => setSoldPlanHours(e.target.value)}
+                        className="w-full h-9 px-3 rounded-full border border-[#E5E5E5] text-xs bg-white focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-neutral-500 mb-1">عدد الريلز</label>
+                      <input
+                        type="number"
+                        step="1"
+                        min="0"
+                        value={soldPlanReels}
+                        onChange={(e) => setSoldPlanReels(e.target.value)}
+                        className="w-full h-9 px-3 rounded-full border border-[#E5E5E5] text-xs bg-white focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">تاريخ البدء</label>
+                    <input
+                      type="date"
+                      value={soldPlanStartDate}
+                      onChange={(e) => setSoldPlanStartDate(e.target.value)}
+                      className="w-full h-11 px-3.5 rounded-full border border-[#E5E5E5] text-xs font-medium text-[#1A1A1A] focus:outline-none focus:border-[#004AC6]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">تاريخ الانتهاء (اختياري)</label>
+                    <input
+                      type="date"
+                      value={soldPlanEndDate}
+                      onChange={(e) => setSoldPlanEndDate(e.target.value)}
+                      className="w-full h-11 px-3.5 rounded-full border border-[#E5E5E5] text-xs font-medium text-[#1A1A1A] focus:outline-none focus:border-[#004AC6]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-600 mb-1">ملاحظات وشروط الاتفاق</label>
+                  <input
+                    type="text"
+                    value={soldPlanNotes}
+                    onChange={(e) => setSoldPlanNotes(e.target.value)}
+                    placeholder="أي اتفاقيات مخصصة..."
+                    className="w-full h-10 px-3.5 rounded-xl border border-[#E5E5E5] text-xs font-medium text-[#1A1A1A] focus:outline-none focus:border-[#004AC6]"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100">
+                  <button
+                    type="button"
+                    onClick={() => setMode("compact")}
+                    className="h-9 px-4 rounded-full bg-neutral-100 hover:bg-neutral-200 text-xs font-semibold text-neutral-600"
+                  >
+                    إلغاء
+                  </button>
+                  <Button type="submit" variant="brand" size="sm" isLoading={isSoldPlanSubmitting}>
+                    إتمام البيع وتفعيل الخطة
+                  </Button>
+                </div>
+              </form>
+            </motion.div>
+          ) : mode === "form-booking" ? (
+            /* 18. EMBEDDED FORM: STUDIO BOOKING */
+            <motion.div
+              key="form-booking"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.16 }}
+              className="flex flex-col w-full space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setMode("actions")}
+                    className="p-1 rounded-full hover:bg-neutral-100 text-neutral-500"
+                    title="رجوع للإجراءات"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                  <span className="text-sm font-bold text-[#1A1A1A]">حجز جلسة استوديو جديدة</span>
+                </div>
+                <button
+                  onClick={() => setMode("compact")}
+                  className="h-7 w-7 rounded-full hover:bg-neutral-100 text-neutral-400 hover:text-neutral-700 flex items-center justify-center"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateBooking} className="space-y-3">
+                {bookingError && (
+                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-100 text-rose-600 text-xs font-medium">
+                    {bookingError}
+                  </div>
+                )}
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-600 mb-1">العميل *</label>
+                  <Select
+                    value={bookingClientId}
+                    onValueChange={(val) => setBookingClientId(val)}
+                    options={clientsList.map((c) => ({
+                      value: c.id,
+                      label: `${c.name} ${c.company_name ? `(${c.company_name})` : ""}`,
+                    }))}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">تاريخ الجلسة *</label>
+                    <input
+                      type="date"
+                      value={bookingDate}
+                      onChange={(e) => setBookingDate(e.target.value)}
+                      className="w-full h-11 px-3.5 rounded-full border border-[#E5E5E5] text-xs font-medium text-[#1A1A1A] focus:outline-none focus:border-[#004AC6]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">وقت البدء *</label>
+                    <input
+                      type="time"
+                      value={bookingStartTime}
+                      onChange={(e) => setBookingStartTime(e.target.value)}
+                      className="w-full h-11 px-3.5 rounded-full border border-[#E5E5E5] text-xs font-medium text-[#1A1A1A] focus:outline-none focus:border-[#004AC6]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">وقت الانتهاء *</label>
+                    <input
+                      type="time"
+                      value={bookingEndTime}
+                      onChange={(e) => setBookingEndTime(e.target.value)}
+                      className="w-full h-11 px-3.5 rounded-full border border-[#E5E5E5] text-xs font-medium text-[#1A1A1A] focus:outline-none focus:border-[#004AC6]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-600 mb-1">تفاصيل وملاحظات الجلسة</label>
+                  <input
+                    type="text"
+                    value={bookingNotes}
+                    onChange={(e) => setBookingNotes(e.target.value)}
+                    placeholder="نوع التصوير، المعدات المطلوبة، أو أسماء الحضور..."
+                    className="w-full h-10 px-3.5 rounded-xl border border-[#E5E5E5] text-xs font-medium text-[#1A1A1A] focus:outline-none focus:border-[#004AC6]"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100">
+                  <button
+                    type="button"
+                    onClick={() => setMode("compact")}
+                    className="h-9 px-4 rounded-full bg-neutral-100 hover:bg-neutral-200 text-xs font-semibold text-neutral-600"
+                  >
+                    إلغاء
+                  </button>
+                  <Button type="submit" variant="brand" size="sm" isLoading={isBookingSubmitting}>
+                    تأكيد حجز الاستوديو
+                  </Button>
+                </div>
+              </form>
+            </motion.div>
+          ) : null}
         </AnimatePresence>
       </motion.div>
     </header>

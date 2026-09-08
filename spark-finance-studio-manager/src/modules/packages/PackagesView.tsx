@@ -12,7 +12,7 @@ export interface PackagesViewProps {
   onRequestNewReel?: boolean;
   onResetNewReelRequest?: () => void;
   renderReelsKanban?: () => React.ReactNode;
-  onOpenHeaderForm?: (mode: "form-package-buy" | "form-package-template" | "form-reel") => void;
+  onOpenHeaderForm?: (mode: "form-package-buy" | "form-package-template" | "form-reel" | "form-sold-plan" | "form-plan-template") => void;
 }
 
 export const PackagesView: React.FC<PackagesViewProps> = ({
@@ -86,14 +86,14 @@ export const PackagesView: React.FC<PackagesViewProps> = ({
             if (onResetNewPackageRequest) onResetNewPackageRequest();
           }}
           initialTemplate={templateToSell}
-          onOpenHeaderForm={onOpenHeaderForm ? () => onOpenHeaderForm('form-package-buy') : undefined}
+          onOpenHeaderForm={onOpenHeaderForm ? () => onOpenHeaderForm('form-sold-plan') : undefined}
         />
       )}
 
       {activeTab === 'templates' && (
         <PackageTemplatesList
           onSellTemplate={handleSellTemplate}
-          onOpenHeaderForm={onOpenHeaderForm ? () => onOpenHeaderForm('form-package-template') : undefined}
+          onOpenHeaderForm={onOpenHeaderForm ? () => onOpenHeaderForm('form-plan-template') : undefined}
         />
       )}
 

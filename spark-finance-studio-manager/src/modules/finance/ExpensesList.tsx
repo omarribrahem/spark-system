@@ -13,7 +13,7 @@ import { getDatabaseDriver } from '../../database/driver';
 import { BdiCurrency, BdiDate } from '../../ui/bdi';
 import { SkeletonCard, EmptyState, ActionableError } from '../../ui/feedback';
 import { Select } from '../../ui/athredu/Select';
-import { ExpenseEntryModal, CATEGORY_OPTIONS } from './ExpenseEntryModal';
+import { CATEGORY_OPTIONS } from '../../domain/models/expense';
 import { AttachmentViewer } from './AttachmentViewer';
 
 export interface ExpensesListProps {
@@ -38,12 +38,12 @@ export const ExpensesList: React.FC<ExpensesListProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Modals
-  const [isEntryModalOpen, setIsEntryModalOpen] = useState(false);
+  
   const [viewingAttachment, setViewingAttachment] = useState<{ path: string; name?: string } | null>(null);
 
   useEffect(() => {
     if (onRequestNewExpense) {
-      setIsEntryModalOpen(true);
+      if (onOpenHeaderForm) onOpenHeaderForm();
       if (onResetNewExpenseRequest) {
         onResetNewExpenseRequest();
       }
@@ -239,14 +239,8 @@ export const ExpensesList: React.FC<ExpensesListProps> = ({
 
           <button
             type="button"
-            onClick={() => {
-              if (onOpenHeaderForm) {
-                onOpenHeaderForm();
-              } else {
-                setIsEntryModalOpen(true);
-              }
-            }}
-            className="inline-flex items-center gap-2 h-11 px-5 rounded-full bg-[#004AC6] hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 shrink-0"
+            onClick={() => onOpenHeaderForm?.()}
+            className="inline-flex items-center gap-2 h-11 px-5 rounded-full bg-[#004AC6] hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-[0.98] shrink-0 whitespace-nowrap"
           >
             <PlusCircle className="w-4 h-4" />
             <span>تسجيل مصروف</span>
@@ -271,7 +265,7 @@ export const ExpensesList: React.FC<ExpensesListProps> = ({
           title="لا توجد مصروفات مسجلة"
           description="لم يتم العثور على أي مصروفات تطابق معايير البحث والتصفية المختارة."
           actionLabel="+ تسجيل مصروف جديد"
-          onAction={() => setIsEntryModalOpen(true)}
+          onAction={() => onOpenHeaderForm?.()}
         />
       ) : (
         <div className="overflow-x-auto border border-[#E5E5E5] rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.03)] bg-white overflow-hidden">
@@ -318,7 +312,7 @@ export const ExpensesList: React.FC<ExpensesListProps> = ({
                             name: `إيصال مصروف ${exp.date}`,
                           })
                         }
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
                       >
                         <Paperclip className="w-3.5 h-3.5" />
                         <span>عرض الإيصال</span>
@@ -334,12 +328,7 @@ export const ExpensesList: React.FC<ExpensesListProps> = ({
         </div>
       )}
 
-      {/* Expense Entry Modal */}
-      <ExpenseEntryModal
-        isOpen={isEntryModalOpen}
-        onClose={() => setIsEntryModalOpen(false)}
-        onExpenseCreated={loadExpenses}
-      />
+      
 
       {/* Attachment Viewer */}
       {viewingAttachment && (

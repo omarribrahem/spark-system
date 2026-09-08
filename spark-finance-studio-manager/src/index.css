@@ -3,13 +3,17 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    scrollbar-gutter: stable;
+    overflow-y: scroll;
+  }
+
   html, body {
     @apply bg-[#FAF9F6] antialiased text-[#1A1A1A];
     font-family: 'Plus Jakarta Sans', 'Noto Sans Arabic', sans-serif;
     direction: rtl;
     text-align: right;
     min-height: 100vh;
-    overflow-y: auto;
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -77,7 +81,7 @@
 
 /* ATHREDU Physical Button Touch */
 .btn-touch {
-  @apply active:scale-95 transition-transform duration-100 ease-out;
+  @apply active:scale-[0.98] transition-transform duration-100 ease-out;
 }
 
 /* Bidirectional Text Isolation */
@@ -94,4 +98,19 @@
 .no-scrollbar {
   -ms-overflow-style: none;  /* IE and Edge */
   scrollbar-width: none;  /* Firefox */
+}
+
+/* AthrEdu Custom Date Picker Styling */
+input[type="date"] {
+  font-family: inherit;
+  cursor: pointer;
+}
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s ease-in-out;
+  padding: 2px;
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 0.9;
 }

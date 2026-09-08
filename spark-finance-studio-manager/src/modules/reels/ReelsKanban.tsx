@@ -23,7 +23,6 @@ import {
 } from './reels-service';
 import { BdiDate } from '../../ui/bdi';
 import { SkeletonCard, EmptyState, ActionableError } from '../../ui/feedback';
-import { ReelFormModal } from './ReelFormModal';
 import { Select } from '../../ui/athredu/Select';
 
 export interface ReelsKanbanProps {
@@ -49,16 +48,15 @@ export const ReelsKanban: React.FC<ReelsKanbanProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
 
   // Modals
-  const [isFormModalOpen, setIsFormModalOpen] = useState(false);
-  const [reelToEdit, setReelToEdit] = useState<ReelItemWithDetails | null>(null);
+  
+  
 
   // Quick feedback
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (onRequestNewReel) {
-      setReelToEdit(null);
-      setIsFormModalOpen(true);
+      if (onOpenHeaderForm) onOpenHeaderForm('form-reel');
       if (onResetNewReelRequest) {
         onResetNewReelRequest();
       }
@@ -181,15 +179,8 @@ export const ReelsKanban: React.FC<ReelsKanbanProps> = ({
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => {
-              if (onOpenHeaderForm) {
-                onOpenHeaderForm("form-reel");
-              } else {
-                setReelToEdit(null);
-                setIsFormModalOpen(true);
-              }
-            }}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#004AC6] hover:bg-[#003bb0] active:scale-95 text-white text-xs font-bold transition-all shadow-sm"
+            onClick={() => onOpenHeaderForm?.("form-reel")}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#004AC6] hover:bg-[#003bb0] active:scale-[0.98] text-white whitespace-nowrap shrink-0 text-xs font-bold transition-all shadow-sm"
           >
             <PlusCircle className="w-4 h-4" />
             <span>ريل جديد</span>
@@ -227,8 +218,7 @@ export const ReelsKanban: React.FC<ReelsKanbanProps> = ({
           description="أضف فيديوهات ريلز لمتابعة مراحل التصوير والمونتاج والتسليم."
           actionLabel="إضافة ريل جديد"
           onAction={() => {
-            setReelToEdit(null);
-            setIsFormModalOpen(true);
+            onOpenHeaderForm?.("form-reel");
           }}
         />
       ) : (
@@ -285,8 +275,7 @@ export const ReelsKanban: React.FC<ReelsKanbanProps> = ({
                             <button
                               type="button"
                               onClick={() => {
-                                setReelToEdit(reel);
-                                setIsFormModalOpen(true);
+                                onOpenHeaderForm?.("form-reel");
                               }}
                               className="w-6 h-6 rounded-full bg-neutral-100 text-neutral-400 hover:text-[#1A1A1A] flex items-center justify-center transition-colors"
                               title="تعديل"
@@ -361,14 +350,7 @@ export const ReelsKanban: React.FC<ReelsKanbanProps> = ({
         </div>
       )}
 
-      {/* Reel Form Modal */}
-      <ReelFormModal
-        isOpen={isFormModalOpen}
-        onClose={() => setIsFormModalOpen(false)}
-        onSaved={loadData}
-        reelToEdit={reelToEdit}
-        preselectedClientId={selectedClientId !== 'all' ? selectedClientId : undefined}
-      />
+      
     </div>
   );
 };

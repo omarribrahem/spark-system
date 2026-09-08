@@ -89,19 +89,26 @@ CROSS-CUTTING / SYSTEM TABLES:
 
 ---
 
-## 3. Physical Schema Specification (All 22 Tables)
+## 3. Physical Schema Specification (All 27 Tables)
 
 ### Table 1: `clients`
-Central client register. Represents businesses, creators, or individuals purchasing Spark services.
+Central client register. Represents businesses, creators, teachers, or individuals purchasing Spark services.
 ```sql
 CREATE TABLE clients (
     id TEXT PRIMARY KEY,                       -- UUID v4
     name TEXT NOT NULL,                        -- Full client name (Arabic/English)
     company_name TEXT,                         -- Brand or company name
     phone TEXT,                                -- Primary contact phone number
-    secondary_phone TEXT,                      -- Alternate phone or WhatsApp number
+    secondary_phone TEXT,                      -- Alternate phone number
     notes TEXT,                                -- General operational notes
     active INTEGER NOT NULL DEFAULT 1,         -- 1 = Active, 0 = Inactive / Archived
+    client_type TEXT DEFAULT 'individual',     -- 'teacher', 'company', 'creator', 'individual', 'educational_entity', 'other'
+    contact_name TEXT,                         -- Contact person name
+    contact_role TEXT,                         -- Contact person role/title
+    whatsapp TEXT,                             -- WhatsApp phone number
+    email TEXT,                                -- Validated email address
+    city TEXT,                                 -- City or Governorate
+    preferred_contact TEXT DEFAULT 'phone',    -- 'whatsapp', 'phone', 'email'
     created_at TEXT NOT NULL,                  -- ISO-8601 UTC timestamp
     updated_at TEXT NOT NULL                   -- ISO-8601 UTC timestamp
 );
@@ -422,6 +429,81 @@ Version tracking for automated database migration execution.
 CREATE TABLE schema_migrations (
     version INTEGER PRIMARY KEY,               -- Monotonically increasing migration version
     applied_at TEXT NOT NULL                   -- ISO-8601 UTC timestamp
+);
+```
+
+### Table 23: `client_custom_field_definitions`
+Schema definitions for dynamic custom fields added by administrators.
+```sql
+CREATE TABLE client_custom_field_definitions (
+    id TEXT PRIMARY KEY,                       -- UUID v4
+    field_key TEXT NOT NULL UNIQUE,            -- Unique immutable snake_case key
+    label TEXT NOT NULL,                       -- Arabic/English display label
+    field_type TEXT NOT NULL,                  -- 'short_text', 'long_text', 'integer', 'money_piasters', 'date', 'phone', 'email', 'url', 'boolean', 'single_select', 'multi_select'
+    section TEXT NOT NULL DEFAULT 'general',   -- Logical group in UI
+    help_text TEXT,                            -- Operator guidance
+    required INTEGER NOT NULL DEFAULT 0,       -- 1 = Mandatory, 0 = Optional
+    searchable INTEGER NOT NULL DEFAULT 0,     -- 1 = Indexed in global/list search
+    filterable INTEGER NOT NULL DEFAULT 1,     -- 1 = Available in Filter Builder
+    active INTEGER NOT NULL DEFAULT 1,         -- 1 = Active, 0 = Deactivated (preserves historical data)
+    sort_order INTEGER NOT NULL DEFAULT 0,     -- Form display ordering
+    created_at TEXT NOT NULL,                  -- ISO-8601 UTC timestamp
+    updated_at TEXT NOT NULL                   -- ISO-8601 UTC timestamp
+);
+```
+
+### Table 24: `client_custom_field_options`
+Predefined selectable options for `single_select` and `multi_select` custom fields.
+```sql
+CREATE TABLE client_custom_field_options (
+    id TEXT PRIMARY KEY,                       -- UUID v4
+    field_definition_id TEXT NOT NULL REFERENCES client_custom_field_definitions(id) ON DELETE CASCADE,
+    value_key TEXT NOT NULL,                   -- Stable key within field
+    label TEXT NOT NULL,                       -- Display label in Arabic
+    active INTEGER NOT NULL DEFAULT 1,         -- 1 = Active, 0 = Deactivated
+    sort_order INTEGER NOT NULL DEFAULT 0,     -- Dropdown ordering
+    CONSTRAINT uq_client_field_option UNIQUE (field_definition_id, value_key)
+);
+```
+
+### Table 25: `client_custom_field_values`
+Normalized typed values for single-value custom fields per client.
+```sql
+CREATE TABLE client_custom_field_values (
+    client_id TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    field_definition_id TEXT NOT NULL REFERENCES client_custom_field_definitions(id) ON DELETE RESTRICT,
+    text_value TEXT,                           -- for short_text, long_text, phone, email, url, single_select
+    number_value INTEGER,                      -- for integer, money_piasters
+    date_value TEXT,                           -- ISO-8601 YYYY-MM-DD
+    boolean_value INTEGER,                     -- 0 or 1
+    created_at TEXT NOT NULL,                  -- ISO-8601 UTC timestamp
+    updated_at TEXT NOT NULL,                  -- ISO-8601 UTC timestamp
+    PRIMARY KEY (client_id, field_definition_id)
+);
+```
+
+### Table 26: `client_custom_field_multiselect_values`
+Normalized junction table for multi-select custom field values per client.
+```sql
+CREATE TABLE client_custom_field_multiselect_values (
+    client_id TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    field_definition_id TEXT NOT NULL REFERENCES client_custom_field_definitions(id) ON DELETE RESTRICT,
+    option_id TEXT NOT NULL REFERENCES client_custom_field_options(id) ON DELETE CASCADE,
+    PRIMARY KEY (client_id, field_definition_id, option_id)
+);
+```
+
+### Table 27: `client_filter_presets`
+Saved user filter criteria configurations (Filter AST presets).
+```sql
+CREATE TABLE client_filter_presets (
+    id TEXT PRIMARY KEY,                       -- UUID v4
+    name TEXT NOT NULL,                        -- Human-readable preset name
+    rules_json TEXT NOT NULL,                  -- Serialized Filter AST rules JSON
+    schema_version INTEGER NOT NULL DEFAULT 1, -- Version for migration compatibility
+    sort_order INTEGER NOT NULL DEFAULT 0,     -- UI list ordering
+    created_at TEXT NOT NULL,                  -- ISO-8601 UTC timestamp
+    updated_at TEXT NOT NULL                   -- ISO-8601 UTC timestamp
 );
 ```
 

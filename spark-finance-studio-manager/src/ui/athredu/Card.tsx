@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { motion, HTMLMotionProps } from "framer-motion";
 
 export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -13,7 +13,7 @@ export const Card: React.FC<CardProps> = ({
 }) => {
   return (
     <div
-      className={`rounded-[2rem] p-6 transition-all duration-200 border border-[#E5E5E5] bg-white shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.06)] hover:border-gray-300 ${className}`}
+      className={`rounded-[2rem] p-6 transition-all duration-200 border border-[#E5E5E5] ${glass ? 'bg-white/95 backdrop-blur-sm' : 'bg-white'} shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.06)] hover:border-gray-300 ${className}`}
       {...props}
     >
       {children}
